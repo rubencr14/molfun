@@ -30,7 +30,7 @@ If you are proposing a large change, open an issue first describing:
 
 ### Kernel code
 
-- Place Triton kernels in `src/kernels/`.
+- Place Triton kernels in `molfun/kernels/`.
 - Provide a small Python wrapper per kernel that validates shapes/dtypes and handles reshaping.
 - Accumulate in fp32 where it improves stability (mean/var, GEMM accumulation) unless justified.
 - Support fp16 and bf16 where reasonable. If a kernel is fp16-only, document it clearly.
@@ -46,7 +46,7 @@ If you are proposing a large change, open an issue first describing:
 
 ### Benchmarks
 
-- Benchmarks live in `src/benchmarks/`.
+- Benchmarks live in `molfun/benchmarks/`.
 - Use deterministic synthetic inputs unless there is a specific need for real data.
 - Use CUDA events for timing and include warmup iterations.
 - Always report:

@@ -1,5 +1,5 @@
 """
-src/benchmarks/bench_esm_fused_mlp12_synth_t30.py
+molfun/benchmarks/bench_esm_fused_mlp12_synth_t30.py
 
 Benchmark HuggingFace ESM-2 t30 (150M) baseline vs. patched MLP1+MLP2 using Triton.
 
@@ -11,7 +11,7 @@ Patched changes per encoder layer:
   ثم نُبقي LayerNorm / dropout كما في HF (dropout في eval() عادة no-op).
 
 Usage:
-  python src/benchmarks/bench_esm_fused_mlp12_synth_t30.py
+  python molfun/benchmarks/bench_esm_fused_mlp12_synth_t30.py
 
 Notes:
 - Inference only.
@@ -29,8 +29,8 @@ from typing import List, Dict, Tuple, Any
 import torch
 from transformers import AutoTokenizer, EsmModel
 
-from src.kernels.fused_linear_gelu_triton import fused_linear_gelu_triton
-from src.kernels.fused_linear_bias_residual_triton import fused_linear_bias_residual_triton
+from molfun.kernels.fused_linear_gelu_triton import fused_linear_gelu_triton
+from molfun.kernels.fused_linear_bias_residual_triton import fused_linear_bias_residual_triton
 
 
 @dataclass

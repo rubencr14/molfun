@@ -1,5 +1,5 @@
 """
-src/benchmarks/bench_esm_patches_synth.py
+molfun/benchmarks/bench_esm_patches_synth.py
 
 One benchmark script to compare:
 - baseline (stock HF ESM forward)
@@ -11,9 +11,9 @@ One benchmark script to compare:
 Synthetic sequences (canonical AA letters) => reproducible.
 
 Usage:
-  python src/benchmarks/bench_esm_patches_synth.py
-  python src/benchmarks/bench_esm_patches_synth.py --model_id facebook/esm2_t30_150M_UR50D --mode mlp12_ln
-  python src/benchmarks/bench_esm_patches_synth.py --cases "1,256;1,512;2,1024"
+  python molfun/benchmarks/bench_esm_patches_synth.py
+  python molfun/benchmarks/bench_esm_patches_synth.py --model_id facebook/esm2_t30_150M_UR50D --mode mlp12_ln
+  python molfun/benchmarks/bench_esm_patches_synth.py --cases "1,256;1,512;2,1024"
 
 Notes:
 - Inference only.
@@ -21,9 +21,9 @@ Notes:
 - Correctness check compares last_hidden_state baseline vs patched.
 
 Required kernels in repo:
-- src/kernels/fused_linear_gelu_triton.py
-- src/kernels/fused_linear_bias_residual_triton.py
-- src/kernels/layernorm_triton.py  (must expose layernorm_triton(x, gamma, beta, eps))
+- molfun/kernels/fused_linear_gelu_triton.py
+- molfun/kernels/fused_linear_bias_residual_triton.py
+- molfun/kernels/layernorm_triton.py  (must expose layernorm_triton(x, gamma, beta, eps))
 """
 
 import argparse
@@ -35,9 +35,9 @@ import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, EsmModel
 
-from src.kernels.fused_linear_gelu_triton import fused_linear_gelu_triton
-from src.kernels.fused_linear_bias_residual_triton import fused_linear_bias_residual_triton
-from src.kernels.layernorm_triton import layernorm_triton
+from molfun.kernels.fused_linear_gelu_triton import fused_linear_gelu_triton
+from molfun.kernels.fused_linear_bias_residual_triton import fused_linear_bias_residual_triton
+from molfun.kernels.layernorm_triton import layernorm_triton
 
 
 

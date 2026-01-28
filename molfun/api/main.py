@@ -58,7 +58,7 @@ class BenchmarkRun(BaseModel):
 
 
 def discover_benchmarks() -> List[str]:
-    """Descubre todos los benchmarks disponibles en src/benchmarks/"""
+    """Descubre todos los benchmarks disponibles en molfun/benchmarks/"""
     benchmarks = []
     for file in BENCHMARKS_DIR.glob("bench_*.py"):
         benchmark_name = file.stem.replace("bench_", "")

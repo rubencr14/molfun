@@ -1,9 +1,9 @@
-.PHONY: help api kill-api install-api run-api kill-frontend frontend install-frontend dev
+.PHONY: help api kill-api install-api run-api kill-frontend frontend install-frontend dev test test-cov install-test
 
 # Variables
 API_PORT := 8000
 FRONTEND_PORT := 3000
-API_DIR := src/api
+API_DIR := molfun/api
 FRONTEND_DIR := frontend
 
 help: ## Muestra esta ayuda
@@ -39,3 +39,15 @@ frontend: kill-frontend ## Levanta el frontend Next.js (mata procesos existentes
 	cd $(FRONTEND_DIR) && npm run dev
 
 dev: api frontend ## Levanta tanto la API como el frontend (en paralelo)
+
+test: ## Ejecuta los tests
+	@echo "Ejecutando tests..."
+	pytest tests/ -v
+
+test-cov: ## Ejecuta los tests con coverage
+	@echo "Ejecutando tests con coverage..."
+	pytest tests/ --cov=molfun --cov-report=html --cov-report=term
+
+install-test: ## Instala dependencias de testing
+	@echo "Instalando dependencias de testing..."
+	pip install -r requirements-test.txt
