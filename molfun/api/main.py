@@ -34,6 +34,7 @@ BENCHMARK_TO_KERNEL = {
     "fused_linear_gelu": "fused_linear_gelu_triton.py",
     "esm_fused_mlp1_synth": "fused_linear_gelu_triton.py",
     "esm_fused_mlp1_synth_t30": "fused_linear_gelu_triton.py",
+    "esmfold_synth": "fused_linear_gelu_triton.py",
 }
 
 
