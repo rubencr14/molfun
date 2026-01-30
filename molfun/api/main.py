@@ -24,7 +24,7 @@ app.add_middleware(
 
 # Paths
 BENCHMARKS_DIR = Path(__file__).parent.parent / "benchmarks"
-KERNELS_DIR = Path(__file__).parent.parent / "kernels"
+KERNELS_DIR = Path(__file__).parent.parent / "kernels" / "models"
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 

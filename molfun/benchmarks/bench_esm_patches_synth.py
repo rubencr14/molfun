@@ -21,9 +21,9 @@ Notes:
 - Correctness check compares last_hidden_state baseline vs patched.
 
 Required kernels in repo:
-- molfun/kernels/fused_linear_gelu_triton.py
-- molfun/kernels/fused_linear_bias_residual_triton.py
-- molfun/kernels/layernorm_triton.py  (must expose layernorm_triton(x, gamma, beta, eps))
+- molfun/kernels/models/fused_linear_gelu_triton.py
+- molfun/kernels/models/fused_linear_bias_residual_triton.py
+- molfun/kernels/models/layernorm_triton.py  (must expose layernorm_triton(x, gamma, beta, eps))
 """
 
 import argparse
@@ -35,9 +35,9 @@ import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, EsmModel
 
-from molfun.kernels.fused_linear_gelu_triton import fused_linear_gelu_triton
-from molfun.kernels.fused_linear_bias_residual_triton import fused_linear_bias_residual_triton
-from molfun.kernels.layernorm_triton import layernorm_triton
+from molfun.kernels.models.fused_linear_gelu_triton import fused_linear_gelu_triton
+from molfun.kernels.models.fused_linear_bias_residual_triton import fused_linear_bias_residual_triton
+from molfun.kernels.models.layernorm_triton import layernorm_triton
 
 
 

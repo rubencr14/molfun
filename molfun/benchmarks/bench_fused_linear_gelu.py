@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from typing import List, Dict, Any
 
-from molfun.kernels.fused_linear_gelu_triton import fused_linear_gelu_triton
+from molfun.kernels.models.fused_linear_gelu_triton import fused_linear_gelu_triton
 
 
 def time_it_cuda(fn, iters=200, warmup=50):

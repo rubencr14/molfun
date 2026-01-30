@@ -29,8 +29,8 @@ from typing import List, Dict, Tuple, Any
 import torch
 from transformers import AutoTokenizer, EsmModel
 
-from molfun.kernels.fused_linear_gelu_triton import fused_linear_gelu_triton
-from molfun.kernels.fused_linear_bias_residual_triton import fused_linear_bias_residual_triton
+from molfun.kernels.models.fused_linear_gelu_triton import fused_linear_gelu_triton
+from molfun.kernels.models.fused_linear_bias_residual_triton import fused_linear_bias_residual_triton
 
 
 @dataclass

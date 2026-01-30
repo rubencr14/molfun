@@ -29,7 +29,7 @@ from typing import List, Dict, Tuple, Any
 import torch
 from transformers import AutoTokenizer, EsmForProteinFolding
 
-from molfun.kernels.fused_linear_gelu_triton import fused_linear_gelu_triton
+from molfun.kernels.models.fused_linear_gelu_triton import fused_linear_gelu_triton
 
 
 @dataclass

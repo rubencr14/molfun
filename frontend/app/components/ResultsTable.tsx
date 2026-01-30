@@ -16,6 +16,17 @@ interface ResultsTableProps {
 }
 
 export default function ResultsTable({ results }: ResultsTableProps) {
+  // Check if this is a benchmark with extra analysis tools (MDTraj, MDAnalysis)
+  const hasAnalysisTools = results.length > 0 && (
+    results[0].metadata?.mdtraj_ms !== undefined ||
+    results[0].metadata?.mdanalysis_ms !== undefined
+  )
+
+  // Determine baseline label based on benchmark type
+  const baselineLabel = results.length > 0 && results[0].metadata?.numpy_ms !== undefined
+    ? 'NumPy (ms)'
+    : 'Baseline (ms)'
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left border-collapse">
@@ -23,8 +34,18 @@ export default function ResultsTable({ results }: ResultsTableProps) {
           <tr className="border-b border-gray-200 dark:border-gray-700">
             <th className="p-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Case</th>
             <th className="p-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
-              Baseline (ms)
+              {baselineLabel}
             </th>
+            {hasAnalysisTools && (
+              <>
+                <th className="p-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  MDTraj (ms)
+                </th>
+                <th className="p-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  MDAnalysis (ms)
+                </th>
+              </>
+            )}
             <th className="p-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
               Triton (ms)
             </th>
@@ -33,9 +54,6 @@ export default function ResultsTable({ results }: ResultsTableProps) {
             </th>
             <th className="p-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
               Max Diff
-            </th>
-            <th className="p-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
-              Mean Diff
             </th>
           </tr>
         </thead>
@@ -51,6 +69,20 @@ export default function ResultsTable({ results }: ResultsTableProps) {
               <td className="p-3 text-sm text-gray-700 dark:text-gray-300">
                 {result.baseline_time_ms.toFixed(4)}
               </td>
+              {hasAnalysisTools && (
+                <>
+                  <td className="p-3 text-sm text-gray-700 dark:text-gray-300">
+                    {result.metadata?.mdtraj_ms !== null && result.metadata?.mdtraj_ms !== undefined
+                      ? result.metadata.mdtraj_ms.toFixed(4)
+                      : 'N/A'}
+                  </td>
+                  <td className="p-3 text-sm text-gray-700 dark:text-gray-300">
+                    {result.metadata?.mdanalysis_ms !== null && result.metadata?.mdanalysis_ms !== undefined
+                      ? result.metadata.mdanalysis_ms.toFixed(4)
+                      : 'N/A'}
+                  </td>
+                </>
+              )}
               <td className="p-3 text-sm text-gray-700 dark:text-gray-300">
                 {result.triton_time_ms.toFixed(4)}
               </td>
@@ -75,9 +107,6 @@ export default function ResultsTable({ results }: ResultsTableProps) {
               </td>
               <td className="p-3 text-sm text-gray-700 dark:text-gray-300">
                 {result.max_diff.toExponential(2)}
-              </td>
-              <td className="p-3 text-sm text-gray-700 dark:text-gray-300">
-                {result.mean_diff.toExponential(2)}
               </td>
             </tr>
           ))}
