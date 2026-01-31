@@ -9,7 +9,7 @@ import torch
 from typing import Optional, Union, List
 
 from molfun.kernels.analysis.contact_map_atoms import contact_map_atoms_bitpack, unpack_contact_map
-from molfun.kernels.analysis.rmsd import rmsd_triton, rmsd_batch_triton
+from molfun.kernels.analysis.rmsd import rmsd_triton, rmsd_batch_triton, rmsd_aligned_batch_fused
 
 
 def kabsch_gpu(P: torch.Tensor, Q: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -137,16 +137,17 @@ class MolfunAnalysis:
         self.n_frames = self.traj.n_frames
         self.selection = selection
         
+        # Pre-compute GPU tensor (convert nm to Angstrom)
+        # This avoids CPU->GPU transfer on every get_coords() call
+        coords_angstrom = self.traj.xyz * 10.0  # nm -> Angstrom
+        self._coords_gpu = torch.from_numpy(coords_angstrom).float().cuda().contiguous()
+    
     def get_coords(self, frame: Optional[int] = None) -> torch.Tensor:
-        """Get coordinates as CUDA tensor."""
+        """Get coordinates as CUDA tensor (cached, no CPU->GPU transfer)."""
         if frame is not None:
-            coords = self.traj.xyz[frame]  # [N, 3] nm
+            return self._coords_gpu[frame]  # [N, 3] view
         else:
-            coords = self.traj.xyz  # [F, N, 3] nm
-        
-        # Convert nm to Angstrom and move to GPU
-        coords_angstrom = coords * 10.0  # nm -> Angstrom
-        return torch.from_numpy(coords_angstrom).float().cuda()
+            return self._coords_gpu  # [F, N, 3] full tensor
     
     def contact_map(self, cutoff: float, frame: Optional[int] = None) -> torch.Tensor:
         """Compute contact map using Triton kernel."""
@@ -164,6 +165,11 @@ class MolfunAnalysis:
         """
         Compute RMSD using Triton kernel with optional superposition (Kabsch alignment).
         
+        For batch operations with superposition, uses optimized fused stats kernel that:
+        - Computes all Kabsch statistics in a single O(N) pass per frame
+        - Avoids materializing rotated coordinates
+        - Only does SVD on small 3x3 matrices
+        
         Args:
             ref_frame: Reference frame index
             frame: Frame to compare (None for batch)
@@ -177,19 +183,18 @@ class MolfunAnalysis:
         if frame is not None:
             coords = self.get_coords(frame)
             if superposition:
-                # Kabsch alignment on GPU
+                # Single frame: use kabsch_gpu for alignment
                 ref_centered, coords_aligned = kabsch_gpu(ref_coords, coords)
                 return rmsd_triton(ref_centered, coords_aligned)
             else:
                 return rmsd_triton(ref_coords, coords)
         else:
-            # Batch: all frames vs reference using optimized batch kernel
+            # Batch: all frames vs reference
             coords_batch = self.get_coords()  # [F, N, 3]
             
             if superposition:
-                # Kabsch alignment on GPU (batched SVD)
-                ref_centered, coords_batch_aligned = kabsch_gpu(ref_coords, coords_batch)
-                return rmsd_batch_triton(ref_centered, coords_batch_aligned)
+                # Use optimized fused stats kernel - single O(N) pass per frame
+                return rmsd_aligned_batch_fused(ref_coords, coords_batch)
             else:
                 return rmsd_batch_triton(ref_coords, coords_batch)
 
