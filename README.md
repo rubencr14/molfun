@@ -407,9 +407,9 @@ If you use Molfun in academic work, please cite:
 ```bibtex
 @software{molfun,
   title  = {Molfun: GPU Kernels for Molecular Modeling},
-  author = {<YOUR NAME>},
+  author = {Rubén Cañadas},
   year   = {2026},
-  url    = {https://github.com/<ORG>/<REPO>}
+  url    = {https://github.com/rubencr14/molfun/}
 }
 ```
 
