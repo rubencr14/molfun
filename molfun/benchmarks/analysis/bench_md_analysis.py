@@ -219,11 +219,15 @@ def run_benchmark(topology: str, trajectory: str, return_results: bool = False):
     print("\n" + "-" * 100)
     print("Batch Operations (All Frames)")
     print("-" * 100)
+    print(f"Total frames in trajectory: {molfun.n_frames}")
     
-    n_frames_to_test = min(100, molfun.n_frames)  # Limit to 100 frames for benchmark
+    # Use all frames for batch operations (MolfunAnalysis.rmsd() calculates all frames internally)
+    # For display/comparison, we can limit to first N frames if trajectory is very large
+    n_frames_to_test = molfun.n_frames  # Process all frames
+    n_frames_display = min(100, molfun.n_frames)  # Display only first 100 for readability
     
-    # Contact Map - Batch
-    print(f"\nContact Map (first {n_frames_to_test} frames, cutoff={cutoff}Å):")
+    # Contact Map - Batch (all frames)
+    print(f"\nContact Map (all {n_frames_to_test} frames, cutoff={cutoff}Å):")
     
     def batch_cm_molfun():
         results = []
@@ -276,13 +280,14 @@ def run_benchmark(topology: str, trajectory: str, return_results: bool = False):
         })
     
     # RMSD - Batch (optimized batch kernel with superposition)
-    print(f"\nRMSD (first {n_frames_to_test} frames vs frame 0) - With superposition:")
+    print(f"\nRMSD (all {n_frames_to_test} frames vs frame 0) - With superposition:")
+    print(f"  Note: MolfunAnalysis.rmsd() calculates all frames in a single GPU batch operation")
     
     def batch_rmsd_molfun():
-        # Use MolfunAnalysis method with superposition
-        result = molfun.rmsd(0, superposition=True)[:n_frames_to_test]
+        # Use MolfunAnalysis method with superposition - calculates ALL frames internally
+        result = molfun.rmsd(0, superposition=True)  # Returns RMSD for all frames
         torch.cuda.synchronize()  # Sync once after batch computation
-        return result  # GPU tensor, no .item() here
+        return result  # GPU tensor [n_frames], no .item() here
     
     def batch_rmsd_traj():
         import mdtraj
