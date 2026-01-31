@@ -105,21 +105,37 @@ except ImportError:
 class MolfunAnalysis:
     """MD analysis using Triton kernels (fastest)."""
     
-    def __init__(self, topology: str, trajectory: str):
+    # Selection presets
+    SELECTIONS = {
+        "ca": "name CA",
+        "backbone": "backbone",
+        "protein": "protein",
+    }
+    
+    def __init__(self, topology: str, trajectory: str, selection: str = "ca"):
         """
         Args:
             topology: Path to topology file (PDB, GRO, etc.)
             trajectory: Path to trajectory file (XTC, DCD, TRR, etc.)
+            selection: Atom selection - "ca" (alpha carbons), "backbone", or "protein" (all protein atoms)
         """
         if not HAS_MDTRAJ:
             raise ImportError("MDTraj required for MolfunAnalysis")
         
         traj_full = mdtraj.load(trajectory, top=topology)
-        # Filter only CA atoms
-        ca_indices = traj_full.topology.select("name CA")
-        self.traj = traj_full.atom_slice(ca_indices)
+        
+        # Get selection string
+        if selection in self.SELECTIONS:
+            sel_str = self.SELECTIONS[selection]
+        else:
+            sel_str = selection  # Allow custom MDTraj selection strings
+        
+        # Filter atoms
+        indices = traj_full.topology.select(sel_str)
+        self.traj = traj_full.atom_slice(indices)
         self.n_atoms = self.traj.n_atoms
         self.n_frames = self.traj.n_frames
+        self.selection = selection
         
     def get_coords(self, frame: Optional[int] = None) -> torch.Tensor:
         """Get coordinates as CUDA tensor."""
@@ -181,16 +197,30 @@ class MolfunAnalysis:
 class TrajAnalysis:
     """MD analysis using MDTraj."""
     
-    def __init__(self, topology: str, trajectory: str):
+    # Selection presets
+    SELECTIONS = {
+        "ca": "name CA",
+        "backbone": "backbone",
+        "protein": "protein",
+    }
+    
+    def __init__(self, topology: str, trajectory: str, selection: str = "ca"):
         if not HAS_MDTRAJ:
             raise ImportError("MDTraj required for TrajAnalysis")
         
         traj_full = mdtraj.load(trajectory, top=topology)
-        # Filter only CA atoms
-        ca_indices = traj_full.topology.select("name CA")
-        self.traj = traj_full.atom_slice(ca_indices)
+        
+        # Get selection string
+        if selection in self.SELECTIONS:
+            sel_str = self.SELECTIONS[selection]
+        else:
+            sel_str = selection
+        
+        indices = traj_full.topology.select(sel_str)
+        self.traj = traj_full.atom_slice(indices)
         self.n_atoms = self.traj.n_atoms
         self.n_frames = self.traj.n_frames
+        self.selection = selection
     
     def contact_map(self, cutoff: float, frame: Optional[int] = None) -> np.ndarray:
         """Compute contact map using MDTraj."""
@@ -220,25 +250,39 @@ class TrajAnalysis:
 class AnalysisMD:
     """MD analysis using MDAnalysis."""
     
-    def __init__(self, topology: str, trajectory: str):
+    # Selection presets (MDAnalysis syntax)
+    SELECTIONS = {
+        "ca": "name CA",
+        "backbone": "backbone",
+        "protein": "protein",
+    }
+    
+    def __init__(self, topology: str, trajectory: str, selection: str = "ca"):
         if not HAS_MDANALYSIS:
             raise ImportError("MDAnalysis required for AnalysisMD")
         
         self.universe = mda.Universe(topology, trajectory)
-        # Select only CA atoms
-        self.ca_atoms = self.universe.select_atoms("name CA")
-        self.n_atoms = len(self.ca_atoms)
+        
+        # Get selection string
+        if selection in self.SELECTIONS:
+            sel_str = self.SELECTIONS[selection]
+        else:
+            sel_str = selection
+        
+        self.atoms = self.universe.select_atoms(sel_str)
+        self.n_atoms = len(self.atoms)
         self.n_frames = len(self.universe.trajectory)
+        self.selection = selection
     
     def get_coords(self, frame: Optional[int] = None) -> np.ndarray:
         """Get coordinates as numpy array."""
         if frame is not None:
             self.universe.trajectory[frame]
-            return self.ca_atoms.positions  # [N, 3] Angstrom
+            return self.atoms.positions.copy()  # [N, 3] Angstrom
         else:
             coords = []
             for ts in self.universe.trajectory:
-                coords.append(self.ca_atoms.positions)
+                coords.append(self.atoms.positions.copy())
             return np.array(coords)  # [F, N, 3] Angstrom
     
     def contact_map(self, cutoff: float, frame: Optional[int] = None) -> np.ndarray:
