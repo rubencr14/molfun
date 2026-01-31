@@ -53,6 +53,37 @@ By optimizing both geometric and neural network primitives, Molfun provides end-
 
 ---
 
+## Performance Benchmarks
+
+### RMSD with Superposition (Kabsch Alignment)
+
+Benchmark: 2501 frames, 3891 atoms (full protein), batch RMSD calculation with optimal alignment.
+
+| Method | Time | per Frame | vs Molfun |
+|--------|------|-----------|-----------|
+| **Molfun (Triton GPU)** | **0.71 ms** | **0.28 µs** | — |
+| PyTorch GPU (vectorized) | 2.21 ms | 0.88 µs | 3.1× slower |
+| MDTraj (C/Cython CPU) | 14.69 ms | 5.87 µs | 20.8× slower |
+| MDAnalysis (CPU) | 565.98 ms | 226.30 µs | 801× slower |
+
+**Key insights:**
+- **GPU vs GPU (fair comparison)**: Molfun's Triton kernels are **3.1× faster** than naive PyTorch GPU implementation
+- **GPU vs CPU**: Molfun is **21× faster** than MDTraj (optimized C) and **801× faster** than MDAnalysis
+
+### Contact Maps (Batch)
+
+Benchmark: 2501 frames, 254 atoms (Cα only), cutoff = 8.0 Å.
+
+| Method | Time | Speedup |
+|--------|------|---------|
+| **Molfun (Triton GPU)** | **73 ms** | — |
+| MDTraj (CPU) | 2,444 ms | **33× slower** |
+| MDAnalysis (CPU) | 2,859 ms | **39× slower** |
+
+> All benchmarks run on NVIDIA GPU with CUDA 12+. Results may vary depending on hardware.
+
+---
+
 ## Optimization for Protein ML Models
 
 Molfun's GPU kernels are specifically optimized for **training and inference workflows** in modern protein ML architectures, covering both **geometric primitives** and **core neural network operations**:
