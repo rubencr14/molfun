@@ -19,9 +19,10 @@ from molfun.analysis.md import MolfunAnalysis, TrajAnalysis, AnalysisMD
 
 
 # Paths to MD files
-TOPOLOGY_PATH = "/home/rubencr/Escritorio/projects/nomosis/MD_FILES_IKER/MD_LEISH_DPPE_Reduced.prmtop"
-TRAJECTORY_PATH = "/home/rubencr/Escritorio/projects/nomosis/MD_FILES_IKER/MD_LEISH_DPPE_Reduced.dcd"
-
+#TOPOLOGY_PATH = "/home/rubencr/Escritorio/projects/nomosis/MD_FILES_IKER/MD_LEISH_DPPE_Reduced.prmtop"
+#TRAJECTORY_PATH = "/home/rubencr/Escritorio/projects/nomosis/MD_FILES_IKER/MD_LEISH_DPPE_Reduced.dcd"
+TOPOLOGY_PATH = "/home/rubencr/Escritorio/projects/nomosis/MD_FILES_IKER/MD_LEISH_INH_Reduced.prmtop"
+TRAJECTORY_PATH = "/home/rubencr/Escritorio/projects/nomosis/MD_FILES_IKER/MD_LEISH_INH_Reduced.dcd"
 # Number of timing runs for stable measurements
 N_RUNS = 5
 N_WARMUP = 20
@@ -92,25 +93,37 @@ def test_rmsd_performance():
     print(f"Run times: {[f'{t:.2f}ms' for t in traj_times]}")
     print(f"Mean: {traj_time:.2f}ms ({traj_time/n_frames*1000:.2f}µs/frame)")
     
-    # AnalysisMD (MDAnalysis)
+    # AnalysisMD (MDAnalysis) - using optimized RMSD.run() API
     print("\n--- AnalysisMD (MDAnalysis) ---")
+    from MDAnalysis.analysis.rms import RMSD as MDA_RMSD
+    import MDAnalysis as mda
+    
     start = time.perf_counter()
-    mda_obj = AnalysisMD(TOPOLOGY_PATH, TRAJECTORY_PATH, selection="protein")
+    universe = mda.Universe(TOPOLOGY_PATH, TRAJECTORY_PATH)
+    atoms = universe.select_atoms("protein")
     load_time = time.perf_counter() - start
     print(f"Load time: {load_time:.3f}s")
-    print(f"Atoms: {mda_obj.n_atoms}, Frames: {mda_obj.n_frames}")
+    print(f"Atoms: {len(atoms)}, Frames: {len(universe.trajectory)}")
     
-    # Warmup
-    print("Warming up...")
-    _ = [mda_obj.rmsd(0, f, superposition=True) for f in range(10)]
+    # Warmup with optimized RMSD.run()
+    print("Warming up (RMSD.run() batch API)...")
+    rmsd_analysis = MDA_RMSD(universe, universe, select='protein', ref_frame=0)
+    rmsd_analysis.run()
     
-    # Measure (single run - MDAnalysis is slow)
-    print(f"Measuring (1 run - frame-by-frame is slow)...")
-    t0 = time.perf_counter()
-    rmsds_mda = [mda_obj.rmsd(0, f, superposition=True) for f in range(n_frames)]
-    t1 = time.perf_counter()
-    mda_time = (t1 - t0) * 1000  # ms
-    print(f"Time: {mda_time:.2f}ms ({mda_time/n_frames*1000:.2f}µs/frame)")
+    # Measure with multiple runs using optimized batch API
+    print(f"Measuring ({N_RUNS} runs with RMSD.run())...")
+    mda_times = []
+    for _ in range(N_RUNS):
+        rmsd_analysis = MDA_RMSD(universe, universe, select='protein', ref_frame=0)
+        t0 = time.perf_counter()
+        rmsd_analysis.run()
+        t1 = time.perf_counter()
+        mda_times.append((t1 - t0) * 1000)  # ms
+    
+    mda_time = sum(mda_times) / len(mda_times)  # mean in ms
+    rmsds_mda = rmsd_analysis.results.rmsd[:, 2]  # Column 2 = RMSD values in Angstrom
+    print(f"Run times: {[f'{t:.2f}ms' for t in mda_times]}")
+    print(f"Mean: {mda_time:.2f}ms ({mda_time/n_frames*1000:.2f}µs/frame)")
     
     # Summary
     print("\n" + "=" * 80)

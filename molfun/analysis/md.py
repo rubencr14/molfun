@@ -309,16 +309,34 @@ class AnalysisMD:
             return np.stack(results)
     
     def rmsd(self, ref_frame: int = 0, frame: Optional[int] = None, superposition: bool = True) -> Union[float, np.ndarray]:
-        """Compute RMSD using MDAnalysis."""
-        ref_coords = self.get_coords(ref_frame)
+        """
+        Compute RMSD using MDAnalysis.
         
+        For batch operations, uses the optimized RMSD.run() API which processes
+        the entire trajectory efficiently.
+        """
         if frame is not None:
+            # Single frame: use low-level function
+            ref_coords = self.get_coords(ref_frame)
             coords = self.get_coords(frame)
             return rms.rmsd(coords, ref_coords, superposition=superposition)
         else:
-            # Batch
-            coords_batch = self.get_coords()
-            rmsds = []
-            for f in range(coords_batch.shape[0]):
-                rmsds.append(rms.rmsd(coords_batch[f], ref_coords, superposition=superposition))
-            return np.array(rmsds)
+            # Batch: use optimized RMSD analysis class
+            from MDAnalysis.analysis.rms import RMSD as MDA_RMSD
+            
+            # Get selection string for RMSD class
+            if self.selection in self.SELECTIONS:
+                sel_str = self.SELECTIONS[self.selection]
+            else:
+                sel_str = self.selection
+            
+            rmsd_analysis = MDA_RMSD(
+                self.universe, 
+                self.universe, 
+                select=sel_str, 
+                ref_frame=ref_frame
+            )
+            rmsd_analysis.run()
+            
+            # Column 2 contains RMSD values in Angstrom
+            return rmsd_analysis.results.rmsd[:, 2]

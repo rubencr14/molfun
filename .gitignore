@@ -175,7 +175,7 @@ data/*.json
 
 # Model cache (HuggingFace)
 .cache/
-models/
+#models/
 *.bin
 *.safetensors
 *.pt
