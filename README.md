@@ -74,11 +74,14 @@ Benchmark: 2501 frames, 3891 atoms (full protein), batch RMSD calculation with o
 
 Benchmark: 2501 frames, 254 atoms (Cα only), cutoff = 8.0 Å.
 
-| Method | Time | Speedup |
-|--------|------|---------|
-| **Molfun (Triton GPU)** | **73 ms** | — |
-| MDTraj (CPU) | 2,444 ms | **33× slower** |
-| MDAnalysis (CPU) | 2,859 ms | **39× slower** |
+| Method | Time | per Frame | vs Molfun |
+|--------|------|-----------|-----------|
+| **Molfun (Triton GPU)** | **66 ms** | **0.026 ms** | — |
+| PyTorch GPU (vectorized) | 71 ms | 0.028 ms | 1.1× slower |
+| MDTraj (CPU) | 2,432 ms | 0.97 ms | 37× slower |
+| MDAnalysis (CPU) | 3,163 ms | 1.26 ms | 48× slower |
+
+**Additional benefit**: Molfun uses **bit-packed storage** (8× less memory than boolean matrices).
 
 > All benchmarks run on NVIDIA GPU with CUDA 12+. Results may vary depending on hardware.
 
