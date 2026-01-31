@@ -26,6 +26,21 @@ from molfun.kernels.analysis.contact_map_atoms import unpack_contact_map
 # Note: Using MolfunAnalysis.rmsd() method instead of rmsd_batch_triton directly
 
 
+def to_native_type(val):
+    """Convert numpy/torch types to native Python types for JSON serialization."""
+    if isinstance(val, torch.Tensor):
+        val = val.item() if val.numel() == 1 else float(val)
+    elif isinstance(val, np.ndarray):
+        val = val.item() if val.size == 1 else float(val)
+    elif isinstance(val, (np.float32, np.float64, np.floating)):
+        val = float(val)
+    elif isinstance(val, (np.int32, np.int64, np.integer)):
+        val = int(val)
+    elif isinstance(val, (np.bool_, bool)):
+        val = bool(val)
+    return val
+
+
 def time_function(fn, warmup: int = 1):
     """Time a function execution."""
     # Warmup
@@ -105,24 +120,24 @@ def run_benchmark(topology: str, trajectory: str, return_results: bool = False):
     if return_results:
         results.append({
             "benchmark_name": "md_analysis",
-            "case_name": f"Contact Map (single frame, cutoff={cutoff}Å)",
-            "baseline_time_ms": round(t_traj, 4),
-            "triton_time_ms": round(t_molfun, 4),
-            "speedup": round(t_traj / t_molfun, 2) if t_molfun > 0 else None,
-            "max_diff": abs(n_contacts_molfun - n_contacts_traj),
-            "mean_diff": abs(n_contacts_molfun - n_contacts_traj),
+            "case_name": f"Contact Map (single frame, cutoff={to_native_type(cutoff)}Å)",
+            "baseline_time_ms": float(round(to_native_type(t_traj), 4)),
+            "triton_time_ms": float(round(to_native_type(t_molfun), 4)),
+            "speedup": float(round(to_native_type(t_traj) / to_native_type(t_molfun), 2)) if t_molfun > 0 else None,
+            "max_diff": float(abs(to_native_type(n_contacts_molfun) - to_native_type(n_contacts_traj))),
+            "mean_diff": float(abs(to_native_type(n_contacts_molfun) - to_native_type(n_contacts_traj))),
             "metadata": {
                 "operation": "contact_map_single",
-                "frame": frame,
-                "cutoff": cutoff,
-                "molfun_ms": round(t_molfun, 4),
-                "mdtraj_ms": round(t_traj, 4),
-                "mdanalysis_ms": round(t_mda, 4),
-                "contacts_molfun": int(n_contacts_molfun),
-                "contacts_traj": int(n_contacts_traj),
-                "contacts_mda": int(n_contacts_mda),
-                "speedup_vs_mdtraj": round(t_traj / t_molfun, 2) if t_molfun > 0 else None,
-                "speedup_vs_mdanalysis": round(t_mda / t_molfun, 2) if t_molfun > 0 else None,
+                "frame": int(frame),
+                "cutoff": float(to_native_type(cutoff)),
+                "molfun_ms": float(round(to_native_type(t_molfun), 4)),
+                "mdtraj_ms": float(round(to_native_type(t_traj), 4)),
+                "mdanalysis_ms": float(round(to_native_type(t_mda), 4)),
+                "contacts_molfun": int(to_native_type(n_contacts_molfun)),
+                "contacts_traj": int(to_native_type(n_contacts_traj)),
+                "contacts_mda": int(to_native_type(n_contacts_mda)),
+                "speedup_vs_mdtraj": float(round(to_native_type(t_traj) / to_native_type(t_molfun), 2)) if t_molfun > 0 else None,
+                "speedup_vs_mdanalysis": float(round(to_native_type(t_mda) / to_native_type(t_molfun), 2)) if t_molfun > 0 else None,
             }
         })
     
@@ -169,31 +184,31 @@ def run_benchmark(topology: str, trajectory: str, return_results: bool = False):
     if return_results:
         results.append({
             "benchmark_name": "md_analysis",
-            "case_name": f"RMSD (single frame {frame} vs 0, with superposition)",
-            "baseline_time_ms": round(t_traj, 4),
-            "triton_time_ms": round(t_molfun, 4),
-            "speedup": round(t_traj / t_molfun, 2) if t_molfun > 0 else None,
-            "max_diff": max(diff_traj, diff_mda),
-            "mean_diff": (diff_traj + diff_mda) / 2,
+            "case_name": f"RMSD (single frame {int(frame)} vs 0, with superposition)",
+            "baseline_time_ms": float(round(to_native_type(t_traj), 4)),
+            "triton_time_ms": float(round(to_native_type(t_molfun), 4)),
+            "speedup": float(round(to_native_type(t_traj) / to_native_type(t_molfun), 2)) if t_molfun > 0 else None,
+            "max_diff": float(max(to_native_type(diff_traj), to_native_type(diff_mda))),
+            "mean_diff": float((to_native_type(diff_traj) + to_native_type(diff_mda)) / 2),
             "metadata": {
                 "operation": "rmsd_single",
-                "frame": frame,
-                "molfun_ms": round(t_molfun, 4),
-                "mdtraj_ms": round(t_traj, 4),
-                "mdanalysis_ms": round(t_mda, 4),
-                "numpy_ms": round(t_numpy, 4),
-                "rmsd_molfun": round(rmsd_molfun, 6),
-                "rmsd_traj": round(rmsd_traj, 6),
-                "rmsd_mda": round(rmsd_mda, 6),
-                "rmsd_numpy": round(rmsd_numpy, 6),
-                "diff_traj": round(diff_traj, 6),
-                "diff_mda": round(diff_mda, 6),
-                "diff_numpy": round(diff_numpy, 6),
-                "match_traj": match_traj,
-                "match_mda": match_mda,
-                "match_numpy": match_numpy,
-                "speedup_vs_mdtraj": round(t_traj / t_molfun, 2) if t_molfun > 0 else None,
-                "speedup_vs_mdanalysis": round(t_mda / t_molfun, 2) if t_molfun > 0 else None,
+                "frame": int(frame),
+                "molfun_ms": float(round(to_native_type(t_molfun), 4)),
+                "mdtraj_ms": float(round(to_native_type(t_traj), 4)),
+                "mdanalysis_ms": float(round(to_native_type(t_mda), 4)),
+                "numpy_ms": float(round(to_native_type(t_numpy), 4)),
+                "rmsd_molfun": float(round(to_native_type(rmsd_molfun), 6)),
+                "rmsd_traj": float(round(to_native_type(rmsd_traj), 6)),
+                "rmsd_mda": float(round(to_native_type(rmsd_mda), 6)),
+                "rmsd_numpy": float(round(to_native_type(rmsd_numpy), 6)),
+                "diff_traj": float(round(to_native_type(diff_traj), 6)),
+                "diff_mda": float(round(to_native_type(diff_mda), 6)),
+                "diff_numpy": float(round(to_native_type(diff_numpy), 6)),
+                "match_traj": bool(match_traj),
+                "match_mda": bool(match_mda),
+                "match_numpy": bool(match_numpy),
+                "speedup_vs_mdtraj": float(round(to_native_type(t_traj) / to_native_type(t_molfun), 2)) if t_molfun > 0 else None,
+                "speedup_vs_mdanalysis": float(round(to_native_type(t_mda) / to_native_type(t_molfun), 2)) if t_molfun > 0 else None,
             }
         })
     
@@ -239,24 +254,24 @@ def run_benchmark(topology: str, trajectory: str, return_results: bool = False):
     if return_results:
         results.append({
             "benchmark_name": "md_analysis",
-            "case_name": f"Contact Map (batch, {n_frames_to_test} frames, cutoff={cutoff}Å)",
-            "baseline_time_ms": round(t_traj_cm, 4),
-            "triton_time_ms": round(t_molfun_cm, 4),
-            "speedup": round(t_traj_cm / t_molfun_cm, 2) if t_molfun_cm > 0 else None,
+            "case_name": f"Contact Map (batch, {int(n_frames_to_test)} frames, cutoff={to_native_type(cutoff)}Å)",
+            "baseline_time_ms": float(round(to_native_type(t_traj_cm), 4)),
+            "triton_time_ms": float(round(to_native_type(t_molfun_cm), 4)),
+            "speedup": float(round(to_native_type(t_traj_cm) / to_native_type(t_molfun_cm), 2)) if t_molfun_cm > 0 else None,
             "max_diff": 0.0,  # Contact maps are binary, diff is in count
             "mean_diff": 0.0,
             "metadata": {
                 "operation": "contact_map_batch",
-                "n_frames": n_frames_to_test,
-                "cutoff": cutoff,
-                "molfun_ms": round(t_molfun_cm, 4),
-                "mdtraj_ms": round(t_traj_cm, 4),
-                "mdanalysis_ms": round(t_mda_cm, 4),
-                "molfun_ms_per_frame": round(t_molfun_cm / n_frames_to_test, 4),
-                "mdtraj_ms_per_frame": round(t_traj_cm / n_frames_to_test, 4),
-                "mdanalysis_ms_per_frame": round(t_mda_cm / n_frames_to_test, 4),
-                "speedup_vs_mdtraj": round(t_traj_cm / t_molfun_cm, 2) if t_molfun_cm > 0 else None,
-                "speedup_vs_mdanalysis": round(t_mda_cm / t_molfun_cm, 2) if t_molfun_cm > 0 else None,
+                "n_frames": int(n_frames_to_test),
+                "cutoff": float(to_native_type(cutoff)),
+                "molfun_ms": float(round(to_native_type(t_molfun_cm), 4)),
+                "mdtraj_ms": float(round(to_native_type(t_traj_cm), 4)),
+                "mdanalysis_ms": float(round(to_native_type(t_mda_cm), 4)),
+                "molfun_ms_per_frame": float(round(to_native_type(t_molfun_cm) / to_native_type(n_frames_to_test), 4)),
+                "mdtraj_ms_per_frame": float(round(to_native_type(t_traj_cm) / to_native_type(n_frames_to_test), 4)),
+                "mdanalysis_ms_per_frame": float(round(to_native_type(t_mda_cm) / to_native_type(n_frames_to_test), 4)),
+                "speedup_vs_mdtraj": float(round(to_native_type(t_traj_cm) / to_native_type(t_molfun_cm), 2)) if t_molfun_cm > 0 else None,
+                "speedup_vs_mdanalysis": float(round(to_native_type(t_mda_cm) / to_native_type(t_molfun_cm), 2)) if t_molfun_cm > 0 else None,
             }
         })
     
@@ -309,29 +324,29 @@ def run_benchmark(topology: str, trajectory: str, return_results: bool = False):
     if return_results:
         results.append({
             "benchmark_name": "md_analysis",
-            "case_name": f"RMSD (batch, {n_frames_to_test} frames vs 0, with superposition)",
-            "baseline_time_ms": round(t_traj_rmsd, 4),
-            "triton_time_ms": round(t_molfun_rmsd, 4),
-            "speedup": round(t_traj_rmsd / t_molfun_rmsd, 2) if t_molfun_rmsd > 0 else None,
-            "max_diff": max(max_diff_traj, max_diff_mda),
-            "mean_diff": (mean_diff_traj + mean_diff_mda) / 2,
+            "case_name": f"RMSD (batch, {int(n_frames_to_test)} frames vs 0, with superposition)",
+            "baseline_time_ms": float(round(to_native_type(t_traj_rmsd), 4)),
+            "triton_time_ms": float(round(to_native_type(t_molfun_rmsd), 4)),
+            "speedup": float(round(to_native_type(t_traj_rmsd) / to_native_type(t_molfun_rmsd), 2)) if t_molfun_rmsd > 0 else None,
+            "max_diff": float(max(to_native_type(max_diff_traj), to_native_type(max_diff_mda))),
+            "mean_diff": float((to_native_type(mean_diff_traj) + to_native_type(mean_diff_mda)) / 2),
             "metadata": {
                 "operation": "rmsd_batch",
-                "n_frames": n_frames_to_test,
-                "molfun_ms": round(t_molfun_rmsd, 4),
-                "mdtraj_ms": round(t_traj_rmsd, 4),
-                "mdanalysis_ms": round(t_mda_rmsd, 4),
-                "molfun_ms_per_frame": round(t_molfun_rmsd / n_frames_to_test, 4),
-                "mdtraj_ms_per_frame": round(t_traj_rmsd / n_frames_to_test, 4),
-                "mdanalysis_ms_per_frame": round(t_mda_rmsd / n_frames_to_test, 4),
-                "max_diff_traj": round(max_diff_traj, 6),
-                "mean_diff_traj": round(mean_diff_traj, 6),
-                "max_diff_mda": round(max_diff_mda, 6),
-                "mean_diff_mda": round(mean_diff_mda, 6),
-                "match_traj": match_traj,
-                "match_mda": match_mda,
-                "speedup_vs_mdtraj": round(t_traj_rmsd / t_molfun_rmsd, 2) if t_molfun_rmsd > 0 else None,
-                "speedup_vs_mdanalysis": round(t_mda_rmsd / t_molfun_rmsd, 2) if t_molfun_rmsd > 0 else None,
+                "n_frames": int(n_frames_to_test),
+                "molfun_ms": float(round(to_native_type(t_molfun_rmsd), 4)),
+                "mdtraj_ms": float(round(to_native_type(t_traj_rmsd), 4)),
+                "mdanalysis_ms": float(round(to_native_type(t_mda_rmsd), 4)),
+                "molfun_ms_per_frame": float(round(to_native_type(t_molfun_rmsd) / to_native_type(n_frames_to_test), 4)),
+                "mdtraj_ms_per_frame": float(round(to_native_type(t_traj_rmsd) / to_native_type(n_frames_to_test), 4)),
+                "mdanalysis_ms_per_frame": float(round(to_native_type(t_mda_rmsd) / to_native_type(n_frames_to_test), 4)),
+                "max_diff_traj": float(round(to_native_type(max_diff_traj), 6)),
+                "mean_diff_traj": float(round(to_native_type(mean_diff_traj), 6)),
+                "max_diff_mda": float(round(to_native_type(max_diff_mda), 6)),
+                "mean_diff_mda": float(round(to_native_type(mean_diff_mda), 6)),
+                "match_traj": bool(match_traj),
+                "match_mda": bool(match_mda),
+                "speedup_vs_mdtraj": float(round(to_native_type(t_traj_rmsd) / to_native_type(t_molfun_rmsd), 2)) if t_molfun_rmsd > 0 else None,
+                "speedup_vs_mdanalysis": float(round(to_native_type(t_mda_rmsd) / to_native_type(t_molfun_rmsd), 2)) if t_molfun_rmsd > 0 else None,
             }
         })
     

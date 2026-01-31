@@ -28,8 +28,21 @@ export default function SpeedupChart({ results }: SpeedupChartProps) {
     .filter((r) => r.speedup !== null)
     .map((r) => {
       const speedup = r.speedup || 1
+      // Formatear nombres de casos de manera más compacta
+      let name = r.case_name
+      // Para benchmarks de modelos: simplificar formato
+      name = name.replace(/B=(\d+)_T=(\d+)_K=(\d+)_N=(\d+)/, 'B=$1 T=$2')
+      // Para benchmarks de análisis: extraer información clave
+      name = name.replace(/Contact Map \(single frame, cutoff=([\d.]+)Å\)/, 'CM single (cutoff=$1Å)')
+      name = name.replace(/Contact Map \(batch, (\d+) frames, cutoff=([\d.]+)Å\)/, 'CM batch ($1 frames)')
+      name = name.replace(/RMSD \(single frame (\d+) vs 0, with superposition\)/, 'RMSD single (frame $1)')
+      name = name.replace(/RMSD \(batch, (\d+) frames vs 0, with superposition\)/, 'RMSD batch ($1 frames)')
+      // Truncar si es muy largo
+      if (name.length > 30) {
+        name = name.substring(0, 27) + '...'
+      }
       return {
-        name: r.case_name.replace(/B=(\d+)_T=(\d+)_K=(\d+)_N=(\d+)/, 'B=$1 T=$2'),
+        name: name,
         speedup: speedup,
       }
     })
@@ -53,8 +66,11 @@ export default function SpeedupChart({ results }: SpeedupChartProps) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={300}>
-      <ComposedChart data={data}>
+    <ResponsiveContainer width="100%" height={600}>
+      <ComposedChart 
+        data={data}
+        margin={{ top: 30, right: 40, bottom: 140, left: 30 }}
+      >
         <defs>
           <linearGradient id="greenGradient" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#22c55e" stopOpacity={0.15} />
@@ -68,17 +84,28 @@ export default function SpeedupChart({ results }: SpeedupChartProps) {
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis
           dataKey="name"
-          angle={-45}
+          angle={-60}
           textAnchor="end"
-          height={100}
-          tick={{ fontSize: 12 }}
+          height={160}
+          interval={0}
+          tick={{ fontSize: 12, fill: '#6b7280' }}
+          dx={-5}
+          dy={8}
         />
         <YAxis
           label={{ value: 'Speedup (x)', angle: -90, position: 'left', offset: -5 }}
           domain={[yMin, yMax]}
           tickFormatter={formatYAxisTick}
+          tick={{ fontSize: 13 }}
         />
-        <Tooltip />
+        <Tooltip 
+          contentStyle={{ 
+            backgroundColor: 'rgba(255, 255, 255, 0.95)', 
+            border: '1px solid #e5e7eb',
+            borderRadius: '8px',
+            padding: '8px 12px'
+          }}
+        />
         <Legend
           content={({ payload }) => (
             <div className="flex justify-center gap-6 mt-4">
@@ -103,7 +130,13 @@ export default function SpeedupChart({ results }: SpeedupChartProps) {
           stroke="#6b7280"
           strokeWidth={2}
           strokeDasharray="5 5"
-          label={{ value: 'Baseline (1x)', position: 'topRight', fill: '#6b7280' }}
+          label={{ 
+            value: 'Baseline (1x)', 
+            position: 'insideTopRight', 
+            fill: '#6b7280',
+            fontSize: 11,
+            offset: 10
+          }}
         />
         {/* Barras de speedup con colores dinámicos */}
         <Bar dataKey="speedup" name="Speedup" radius={[4, 4, 0, 0]}>

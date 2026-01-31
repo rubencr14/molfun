@@ -16,7 +16,12 @@ app = FastAPI(title="Molfun Benchmarks API")
 # CORS para permitir requests del frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3002",
+        "http://127.0.0.1:3002",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,7 +29,10 @@ app.add_middleware(
 
 # Paths
 BENCHMARKS_DIR = Path(__file__).parent.parent / "benchmarks"
+BENCHMARKS_MODELS_DIR = BENCHMARKS_DIR / "models"
+BENCHMARKS_ANALYSIS_DIR = BENCHMARKS_DIR / "analysis"
 KERNELS_DIR = Path(__file__).parent.parent / "kernels" / "models"
+KERNELS_ANALYSIS_DIR = Path(__file__).parent.parent / "kernels" / "analysis"
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
@@ -58,23 +66,46 @@ class BenchmarkRun(BaseModel):
     error: Optional[str] = None
 
 
-def discover_benchmarks() -> List[str]:
-    """Descubre todos los benchmarks disponibles en molfun/benchmarks/"""
-    benchmarks = []
-    for file in BENCHMARKS_DIR.glob("bench_*.py"):
+def discover_benchmarks() -> Dict[str, List[str]]:
+    """Descubre todos los benchmarks disponibles, organizados por tipo de kernel"""
+    benchmarks = {
+        "models": [],
+        "analysis": []
+    }
+    
+    # Benchmarks de modelos
+    for file in BENCHMARKS_MODELS_DIR.glob("bench_*.py"):
         benchmark_name = file.stem.replace("bench_", "")
-        benchmarks.append(benchmark_name)
-    return sorted(benchmarks)
+        benchmarks["models"].append(benchmark_name)
+    
+    # Benchmarks de análisis
+    for file in BENCHMARKS_ANALYSIS_DIR.glob("bench_*.py"):
+        benchmark_name = file.stem.replace("bench_", "")
+        benchmarks["analysis"].append(benchmark_name)
+    
+    benchmarks["models"] = sorted(benchmarks["models"])
+    benchmarks["analysis"] = sorted(benchmarks["analysis"])
+    
+    return benchmarks
 
 
-def run_benchmark(benchmark_name: str) -> BenchmarkRun:
+def run_benchmark(benchmark_name: str, kernel_type: str = "models") -> BenchmarkRun:
     """Ejecuta un benchmark y devuelve los resultados estructurados"""
-    benchmark_file = BENCHMARKS_DIR / f"bench_{benchmark_name}.py"
+    # Determinar en qué carpeta buscar
+    if kernel_type == "models":
+        benchmark_file = BENCHMARKS_MODELS_DIR / f"bench_{benchmark_name}.py"
+    elif kernel_type == "analysis":
+        benchmark_file = BENCHMARKS_ANALYSIS_DIR / f"bench_{benchmark_name}.py"
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tipo de kernel inválido: '{kernel_type}'. Debe ser 'models' o 'analysis'"
+        )
     
     if not benchmark_file.exists():
         raise HTTPException(
             status_code=404, 
-            detail=f"Benchmark '{benchmark_name}' no encontrado"
+            detail=f"Benchmark '{benchmark_name}' no encontrado en {kernel_type}/"
         )
     
     try:
@@ -154,16 +185,19 @@ async def root():
     return {"message": "Molfun Benchmarks API"}
 
 
-@app.get("/benchmarks", response_model=List[str])
-async def list_benchmarks():
-    """Lista todos los benchmarks disponibles"""
-    return discover_benchmarks()
+@app.get("/benchmarks")
+async def list_benchmarks(kernel_type: Optional[str] = None):
+    """Lista todos los benchmarks disponibles, organizados por tipo de kernel"""
+    all_benchmarks = discover_benchmarks()
+    if kernel_type:
+        return {kernel_type: all_benchmarks.get(kernel_type, [])}
+    return all_benchmarks
 
 
 @app.post("/benchmarks/{benchmark_name}/run", response_model=BenchmarkRun)
-async def run_benchmark_endpoint(benchmark_name: str):
+async def run_benchmark_endpoint(benchmark_name: str, kernel_type: str = "models"):
     """Ejecuta un benchmark específico"""
-    return run_benchmark(benchmark_name)
+    return run_benchmark(benchmark_name, kernel_type)
 
 
 @app.get("/results")
@@ -198,7 +232,7 @@ async def get_result(filename: str):
 
 
 @app.get("/kernels/{benchmark_name}")
-async def get_kernel_code(benchmark_name: str):
+async def get_kernel_code(benchmark_name: str, kernel_type: str = "models"):
     """Obtiene el código del benchmark y del kernel asociado"""
     result = {
         "benchmark_name": benchmark_name,
@@ -208,15 +242,36 @@ async def get_kernel_code(benchmark_name: str):
         "kernel_filename": None,
     }
     
-    # Obtener código del benchmark
-    benchmark_file = BENCHMARKS_DIR / f"bench_{benchmark_name}.py"
+    # Obtener código del benchmark según el tipo
+    if kernel_type == "models":
+        benchmark_file = BENCHMARKS_MODELS_DIR / f"bench_{benchmark_name}.py"
+    elif kernel_type == "analysis":
+        benchmark_file = BENCHMARKS_ANALYSIS_DIR / f"bench_{benchmark_name}.py"
+    else:
+        raise HTTPException(status_code=400, detail=f"Tipo de kernel inválido: {kernel_type}")
+    
     if benchmark_file.exists():
         with open(benchmark_file, "r", encoding="utf-8") as f:
             result["benchmark_code"] = f.read()
             result["benchmark_filename"] = f"bench_{benchmark_name}.py"
     
     # Obtener código del kernel asociado
-    if benchmark_name in BENCHMARK_TO_KERNEL:
+    if kernel_type == "analysis":
+        # Mapeo para kernels de análisis
+        kernel_mappings = {
+            "contact_map": "contact_map_atoms.py",
+            "pairwise_distance": "pairwise_distance.py",
+            "rmsd": "rmsd.py",
+            "md_analysis": None  # No tiene kernel directo
+        }
+        kernel_filename = kernel_mappings.get(benchmark_name)
+        if kernel_filename:
+            kernel_path = KERNELS_ANALYSIS_DIR / kernel_filename
+            if kernel_path.exists():
+                with open(kernel_path, "r", encoding="utf-8") as f:
+                    result["kernel_code"] = f.read()
+                    result["kernel_filename"] = kernel_filename
+    elif benchmark_name in BENCHMARK_TO_KERNEL:
         kernel_filename = BENCHMARK_TO_KERNEL[benchmark_name]
         kernel_path = KERNELS_DIR / kernel_filename
         
