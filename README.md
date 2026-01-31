@@ -13,7 +13,7 @@ The goal is simple: accelerate a small set of foundational primitives (distances
 
 ---
 
-## Why molfun?
+## Why Molfun?
 
 Molecular modeling pipelines spend a surprising amount of time on a small set of repeated operations:
 
@@ -23,15 +23,19 @@ Molecular modeling pipelines spend a surprising amount of time on a small set of
 - centroids / radius of gyration
 - neighbor-style queries & sparse edge lists (roadmap)
 
-molfun focuses on accelerating these **building blocks** with careful attention to memory bandwidth and scalable batch processing.
+Molfun focuses on accelerating these **building blocks** with careful attention to memory bandwidth and scalable batch processing.
 
-Beyond traditional MD analysis, molfun's optimized kernels are essential for **training and inference of protein ML models** such as:
+Beyond traditional MD analysis, Molfun's optimized kernels are essential for **training and inference of protein ML models** such as:
 - **AlphaFold** and structure prediction pipelines (contact map computation, distance features)
 - **ESM** (Evolutionary Scale Modeling) embeddings and protein language models
-- **ProteinX** and other transformer-based architectures
+- **Protenix** and other transformer-based architectures
 - Any model requiring efficient geometric features from protein structures
 
-These models rely heavily on contact maps, pairwise distances, and structural features—operations that molfun accelerates with GPU-optimized kernels.
+These models rely heavily on:
+- **Geometric primitives**: contact maps, pairwise distances, and structural features—operations that Molfun accelerates with GPU-optimized kernels
+- **Core neural network operations**: GELU, SwiGLU, LayerNorm, and attention mechanisms—fundamental operations that Molfun optimizes through fused kernels to reduce memory traffic and kernel launch overhead
+
+By optimizing both geometric and neural network primitives, Molfun provides end-to-end acceleration for the entire protein ML training and inference pipeline.
 
 ---
 
@@ -51,7 +55,18 @@ These models rely heavily on contact maps, pairwise distances, and structural fe
 
 ## Optimization for Protein ML Models
 
-molfun's GPU kernels are specifically optimized for **training and inference workflows** in modern protein ML architectures:
+Molfun's GPU kernels are specifically optimized for **training and inference workflows** in modern protein ML architectures, covering both **geometric primitives** and **core neural network operations**:
+
+### Core Neural Network Operations
+
+Molfun provides optimized GPU kernels for fundamental operations used across all transformer-based protein models:
+
+- **GELU activation**: Fused `Linear + GELU` kernels reduce memory traffic and kernel launch overhead
+- **SwiGLU**: Optimized gated linear units (GLU) variants used in modern architectures (LLaMA, ESM-2)
+- **LayerNorm**: Efficient normalization kernels with reduced synchronization overhead
+- **Attention mechanisms**: Optimized attention kernels for protein sequence and structure attention
+
+These fused operations are **critical bottlenecks** in models like ESM, AlphaFold, and ProteinX, where they can account for 30-50% of training time.
 
 ### Structure Prediction Models
 
@@ -59,8 +74,9 @@ molfun's GPU kernels are specifically optimized for **training and inference wor
 - **Contact map computation** for attention mechanisms and loss functions
 - **Pairwise distance features** for geometric constraints
 - **Batch processing** of multiple structures during training
+- **Optimized MLP blocks** (fused Linear+GELU) in the folding trunk
 
-molfun's bit-packed contact maps reduce memory bandwidth by **8×**, enabling larger batch sizes and faster training iterations.
+Molfun's bit-packed contact maps reduce memory bandwidth by **8×**, enabling larger batch sizes and faster training iterations.
 
 ### Protein Language Models
 
@@ -68,10 +84,13 @@ molfun's bit-packed contact maps reduce memory bandwidth by **8×**, enabling la
 - **Efficient distance computation** for structural features
 - **Contact map generation** for attention masks and graph construction
 - **Batch RMSD** for structure-aware training objectives
+- **Fused MLP operations** (Linear+GELU/SwiGLU) in transformer layers
+- **Optimized LayerNorm** for sequence normalization
 
 ### Key Optimizations
 
-- **Memory-efficient contact maps**: Bit-packed storage reduces GPU memory usage, allowing larger models and batch sizes
+- **Fused operations**: Combine Linear+GELU/SwiGLU+LayerNorm to reduce kernel launches and memory traffic
+- **Memory-efficient contact maps**: Bit-packed storage reduces GPU memory usage by **8×**, allowing larger models and batch sizes
 - **Batch-friendly APIs**: Process thousands of structures in parallel without CPU-GPU synchronization overhead
 - **Mixed precision support**: Optimized for `float16` inference while maintaining `float32` accuracy where needed
 - **Scalable to large systems**: Efficient kernels handle systems from small peptides to large protein complexes
@@ -79,7 +98,13 @@ molfun's bit-packed contact maps reduce memory bandwidth by **8×**, enabling la
 ### Integration Example
 
 ```python
-# Example: Contact map features for AlphaFold-style training
+# Example 1: Fused MLP for ESM/AlphaFold transformer layers
+from molfun.kernels.models import fused_linear_gelu_triton
+
+# Replace standard MLP with fused kernel
+hidden_states = fused_linear_gelu_triton(hidden_states, weight, bias)
+
+# Example 2: Contact map features for AlphaFold-style training
 from molfun.kernels.analysis import contact_map_atoms_bitpack
 
 # Generate contact maps for a batch of structures
@@ -95,11 +120,20 @@ for coords in training_structures:
 
 ## Project Status
 
+### Analysis Kernels
 - ✅ Pairwise distance (GPU)
 - ✅ RMSD (raw, no alignment) (GPU)
 - ✅ Atomic contact map (bit-packed) (GPU)
-- 🚧 Batch RMSD (raw) (GPU) — in progress
-- 🚧 Aligned RMSD (Kabsch) — roadmap
+- ✅ Batch RMSD with superposition (Kabsch) (GPU)
+- ✅ MD trajectory analysis (contact maps, RMSD)
+
+### Model Kernels
+- ✅ GELU activation (GPU)
+- ✅ Fused Linear+GELU (GPU)
+- ✅ ESM MLP optimization (patched)
+- 🚧 SwiGLU (roadmap)
+- 🚧 LayerNorm (roadmap)
+- 🚧 Attention mechanisms (roadmap)
 
 ---
 
@@ -334,11 +368,11 @@ MIT — see [`LICENSE`](./LICENSE).
 
 ## Citation
 
-If you use molfun in academic work, please cite:
+If you use Molfun in academic work, please cite:
 
 ```bibtex
 @software{molfun,
-  title  = {molfun: GPU Kernels for Molecular Modeling},
+  title  = {Molfun: GPU Kernels for Molecular Modeling},
   author = {<YOUR NAME>},
   year   = {2026},
   url    = {https://github.com/<ORG>/<REPO>}
