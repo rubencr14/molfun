@@ -7,54 +7,84 @@ Optimized MD trajectory analysis classes using Triton kernels, MDTraj, and MDAna
 import numpy as np
 import torch
 from typing import Optional, Union, List
-from scipy.spatial.transform import Rotation
 
 from molfun.kernels.analysis.contact_map_atoms import contact_map_atoms_bitpack, unpack_contact_map
 from molfun.kernels.analysis.rmsd import rmsd_triton, rmsd_batch_triton
 
 
-def kabsch_superposition(P: torch.Tensor, Q: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def kabsch_gpu(P: torch.Tensor, Q: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Kabsch algorithm for optimal rotation between two point sets using scipy.
+    Kabsch algorithm for optimal rotation - fully on GPU using PyTorch batched SVD.
+    
+    Finds rotation R that minimizes ||P - Q @ R||
     
     Args:
-        P: [N, 3] reference coordinates
-        Q: [N, 3] or [M, N, 3] coordinates to align
+        P: [N, 3] reference coordinates (GPU)
+        Q: [N, 3] or [M, N, 3] coordinates to align (GPU)
     
     Returns:
         P_centered: [N, 3] centered reference
         Q_aligned: [N, 3] or [M, N, 3] aligned coordinates (centered and rotated)
     """
-    device = P.device
-    P_np = P.cpu().numpy()
-    P_centered_np = P_np - P_np.mean(axis=0)
+    # Center reference
+    P_centered = P - P.mean(dim=0, keepdim=True)  # [N, 3]
     
     if Q.dim() == 2:
-        # Single frame
-        Q_np = Q.cpu().numpy()
-        Q_centered_np = Q_np - Q_np.mean(axis=0)
+        # Single frame: [N, 3]
+        Q_centered = Q - Q.mean(dim=0, keepdim=True)  # [N, 3]
         
-        # scipy.align_vectors(a, b) finds R such that a ≈ R @ b
-        rot, _ = Rotation.align_vectors(P_centered_np, Q_centered_np)
-        Q_aligned_np = rot.apply(Q_centered_np)
+        # Covariance matrix H = P^T @ Q -> [3, 3]
+        H = P_centered.T @ Q_centered
         
-        P_centered = torch.from_numpy(P_centered_np).float().to(device)
-        Q_aligned = torch.from_numpy(Q_aligned_np).float().to(device)
+        # SVD: H = U @ S @ Vt
+        U, S, Vt = torch.linalg.svd(H)
+        V = Vt.T
+        
+        # Rotation R = V @ U^T (standard Kabsch)
+        R = V @ U.T
+        
+        # Handle reflection (ensure det(R) = 1)
+        if torch.det(R) < 0:
+            V[:, -1] *= -1
+            R = V @ U.T
+        
+        # Apply rotation: Q_aligned = Q_centered @ R
+        Q_aligned = Q_centered @ R
+        
         return P_centered, Q_aligned
+    
     else:
         # Batch: [M, N, 3]
         M = Q.shape[0]
-        Q_np = Q.cpu().numpy()
-        Q_aligned_np = np.zeros_like(Q_np)
         
-        for i in range(M):
-            Q_i = Q_np[i]
-            Q_i_centered = Q_i - Q_i.mean(axis=0)
-            rot, _ = Rotation.align_vectors(P_centered_np, Q_i_centered)
-            Q_aligned_np[i] = rot.apply(Q_i_centered)
+        # Center each frame: [M, N, 3]
+        Q_centered = Q - Q.mean(dim=1, keepdim=True)
         
-        P_centered = torch.from_numpy(P_centered_np).float().to(device)
-        Q_aligned = torch.from_numpy(Q_aligned_np).float().to(device)
+        # Covariance matrices H[m] = P^T @ Q[m] -> [M, 3, 3]
+        # P_centered: [N, 3], Q_centered: [M, N, 3]
+        # H[m,i,j] = sum_n P_centered[n,i] * Q_centered[m,n,j]
+        H = torch.einsum('ni,mnj->mij', P_centered, Q_centered)
+        
+        # Batched SVD: U[M,3,3], S[M,3], Vt[M,3,3]
+        U, S, Vt = torch.linalg.svd(H)
+        V = Vt.transpose(-2, -1)  # [M, 3, 3]
+        
+        # Rotation R = V @ U^T -> [M, 3, 3]
+        R = torch.bmm(V, U.transpose(-2, -1))
+        
+        # Handle reflections (det < 0)
+        det = torch.det(R)  # [M]
+        mask = det < 0
+        if mask.any():
+            # Fix reflections by flipping last column of V
+            V_fixed = V.clone()
+            V_fixed[mask, :, -1] *= -1
+            R[mask] = torch.bmm(V_fixed[mask], U[mask].transpose(-2, -1))
+        
+        # Apply rotation: Q_aligned[m] = Q_centered[m] @ R[m]
+        # [M, N, 3] @ [M, 3, 3] -> [M, N, 3]
+        Q_aligned = torch.bmm(Q_centered, R)
+        
         return P_centered, Q_aligned
 
 # Optional dependencies
@@ -131,8 +161,8 @@ class MolfunAnalysis:
         if frame is not None:
             coords = self.get_coords(frame)
             if superposition:
-                # Kabsch alignment returns (centered_ref, aligned_coords)
-                ref_centered, coords_aligned = kabsch_superposition(ref_coords, coords)
+                # Kabsch alignment on GPU
+                ref_centered, coords_aligned = kabsch_gpu(ref_coords, coords)
                 return rmsd_triton(ref_centered, coords_aligned)
             else:
                 return rmsd_triton(ref_coords, coords)
@@ -141,8 +171,8 @@ class MolfunAnalysis:
             coords_batch = self.get_coords()  # [F, N, 3]
             
             if superposition:
-                # Kabsch alignment for batch
-                ref_centered, coords_batch_aligned = kabsch_superposition(ref_coords, coords_batch)
+                # Kabsch alignment on GPU (batched SVD)
+                ref_centered, coords_batch_aligned = kabsch_gpu(ref_coords, coords_batch)
                 return rmsd_batch_triton(ref_centered, coords_batch_aligned)
             else:
                 return rmsd_batch_triton(ref_coords, coords_batch)
