@@ -25,6 +25,14 @@ Molecular modeling pipelines spend a surprising amount of time on a small set of
 
 molfun focuses on accelerating these **building blocks** with careful attention to memory bandwidth and scalable batch processing.
 
+Beyond traditional MD analysis, molfun's optimized kernels are essential for **training and inference of protein ML models** such as:
+- **AlphaFold** and structure prediction pipelines (contact map computation, distance features)
+- **ESM** (Evolutionary Scale Modeling) embeddings and protein language models
+- **ProteinX** and other transformer-based architectures
+- Any model requiring efficient geometric features from protein structures
+
+These models rely heavily on contact maps, pairwise distances, and structural features—operations that molfun accelerates with GPU-optimized kernels.
+
 ---
 
 ## Highlights
@@ -38,6 +46,50 @@ molfun focuses on accelerating these **building blocks** with careful attention 
   - PyTorch baselines
   - MDAnalysis / MDTraj (CPU baselines)
 - Reference implementations for correctness and testing
+
+---
+
+## Optimization for Protein ML Models
+
+molfun's GPU kernels are specifically optimized for **training and inference workflows** in modern protein ML architectures:
+
+### Structure Prediction Models
+
+**AlphaFold** and similar structure prediction models require:
+- **Contact map computation** for attention mechanisms and loss functions
+- **Pairwise distance features** for geometric constraints
+- **Batch processing** of multiple structures during training
+
+molfun's bit-packed contact maps reduce memory bandwidth by **8×**, enabling larger batch sizes and faster training iterations.
+
+### Protein Language Models
+
+**ESM** (Evolutionary Scale Modeling) and **ProteinX** embeddings benefit from:
+- **Efficient distance computation** for structural features
+- **Contact map generation** for attention masks and graph construction
+- **Batch RMSD** for structure-aware training objectives
+
+### Key Optimizations
+
+- **Memory-efficient contact maps**: Bit-packed storage reduces GPU memory usage, allowing larger models and batch sizes
+- **Batch-friendly APIs**: Process thousands of structures in parallel without CPU-GPU synchronization overhead
+- **Mixed precision support**: Optimized for `float16` inference while maintaining `float32` accuracy where needed
+- **Scalable to large systems**: Efficient kernels handle systems from small peptides to large protein complexes
+
+### Integration Example
+
+```python
+# Example: Contact map features for AlphaFold-style training
+from molfun.kernels.analysis import contact_map_atoms_bitpack
+
+# Generate contact maps for a batch of structures
+batch_contacts = []
+for coords in training_structures:
+    contacts = contact_map_atoms_bitpack(coords, cutoff=8.0)
+    batch_contacts.append(contacts)  # Efficient bit-packed format
+
+# Use in model forward pass or loss computation
+```
 
 ---
 
