@@ -1,13 +1,13 @@
-# molfun — GPU Kernels for Molecular Modeling
+# Molfun — GPU Kernels for Molecular Modeling
 
-[![CI](https://github.com/<ORG>/<REPO>/actions/workflows/ci.yml/badge.svg)](https://github.com/<ORG>/<REPO>/actions/workflows/ci.yml)
-[![Benchmarks](https://github.com/<ORG>/<REPO>/actions/workflows/bench.yml/badge.svg)](https://github.com/<ORG>/<REPO>/actions/workflows/bench.yml)
+![Molfun Banner](./docs/banner.png)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](#installation)
 [![CUDA](https://img.shields.io/badge/CUDA-12%2B-green.svg)](#requirements)
 [![Code style](https://img.shields.io/badge/code%20style-ruff-black.svg)](https://github.com/astral-sh/ruff)
 
-**molfun** is an open-source library that provides **high-performance GPU kernels** for **molecular modeling & molecular dynamics (MD) analysis**.
+**Molfun** is an open-source library that provides **high-performance GPU kernels** for **molecular modeling & molecular dynamics (MD) analysis**.
 
 The goal is simple: accelerate a small set of foundational primitives (distances, RMSD, contact queries) so downstream tasks—trajectory analysis, clustering, docking scoring, and ML feature generation—become faster and more scalable.
 
