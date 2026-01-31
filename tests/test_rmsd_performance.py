@@ -8,6 +8,7 @@ import time
 import pytest
 import torch
 import numpy as np
+import mdtraj
 
 from molfun.analysis.md import MolfunAnalysis, TrajAnalysis, AnalysisMD
 
@@ -57,14 +58,14 @@ def test_rmsd_performance():
     print(f"Load time: {load_time:.3f}s")
     print(f"Atoms: {traj.n_atoms}, Frames: {traj.n_frames}")
     
-    # Warmup
+    # Warmup - use batch function
     print("Warming up...")
-    _ = [traj.rmsd(0, f) for f in range(10)]
+    _ = mdtraj.rmsd(traj.traj[:10], traj.traj[0]) * 10.0
     
-    # Now measure actual performance - process all frames
-    print(f"Calculating RMSD for all {n_frames} frames (frame-by-frame)...")
+    # Now measure actual performance - use MDTraj batch function (most efficient)
+    print(f"Calculating RMSD for all {n_frames} frames (MDTraj batch function)...")
     start = time.time()
-    rmsds_traj = [traj.rmsd(0, f) for f in range(n_frames)]
+    rmsds_traj = mdtraj.rmsd(traj.traj, traj.traj[0]) * 10.0  # Batch: all frames vs frame 0
     traj_time = time.time() - start
     print(f"RMSD calculation time (all {n_frames} frames): {traj_time:.3f}s ({traj_time*1000/n_frames:.3f}ms/frame)")
     

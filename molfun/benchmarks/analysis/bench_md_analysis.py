@@ -291,11 +291,9 @@ def run_benchmark(topology: str, trajectory: str, return_results: bool = False):
     
     def batch_rmsd_traj():
         import mdtraj
+        # MDTraj batch function - calculates RMSD for all frames at once (most efficient)
         # MDTraj does superposition by default (aligned RMSD)
-        rmsds = []
-        for f in range(n_frames_to_test):
-            rmsds.append(mdtraj.rmsd(traj.traj[f], traj.traj[0])[0] * 10.0)
-        return np.array(rmsds)
+        return mdtraj.rmsd(traj.traj, traj.traj[0]) * 10.0  # All frames vs frame 0
     
     def batch_rmsd_mda():
         # MDAnalysis also does superposition
