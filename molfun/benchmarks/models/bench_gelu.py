@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from typing import List, Dict, Any
 
-from src.kernels.gelu_triton import gelu_triton
+from molfun.kernels.models.gelu_triton import gelu_triton
 
 
 def time_it(fn, iters=200, warmup=50):

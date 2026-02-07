@@ -9,6 +9,7 @@ import SpeedupChart from './components/SpeedupChart'
 import TimeComparisonChart from './components/TimeComparisonChart'
 import CodeViewer from './components/CodeViewer'
 import HistoryPanel from './components/HistoryPanel'
+import Sidebar from './components/Sidebar'
 
 const API_BASE_URL = 'http://localhost:8000'
 
@@ -46,6 +47,7 @@ interface KernelCode {
 }
 
 export default function Home() {
+  const [kernelType, setKernelType] = useState<'models' | 'analysis'>('models')
   const [benchmarks, setBenchmarks] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [runningBenchmark, setRunningBenchmark] = useState<string | null>(null)
@@ -58,12 +60,22 @@ export default function Home() {
 
   useEffect(() => {
     fetchBenchmarks()
-  }, [])
+  }, [kernelType])
 
   const fetchBenchmarks = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/benchmarks`)
-      setBenchmarks(response.data)
+      const response = await axios.get(`${API_BASE_URL}/benchmarks`, {
+        params: { kernel_type: kernelType }
+      })
+      // La API devuelve {models: [...], analysis: [...]} o {[kernelType]: [...]}
+      const data = response.data
+      if (data[kernelType]) {
+        setBenchmarks(data[kernelType])
+      } else if (Array.isArray(data)) {
+        setBenchmarks(data)
+      } else {
+        setBenchmarks([])
+      }
       setLoading(false)
     } catch (err) {
       setError('Failed to fetch benchmarks')
@@ -77,7 +89,9 @@ export default function Home() {
     setCurrentResults(null)
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/benchmarks/${benchmarkName}/run`)
+      const response = await axios.post(`${API_BASE_URL}/benchmarks/${benchmarkName}/run`, null, {
+        params: { kernel_type: kernelType }
+      })
       setCurrentResults(response.data)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to run benchmark')
@@ -89,7 +103,9 @@ export default function Home() {
   const fetchKernelCode = async (benchmarkName: string) => {
     setLoadingCode(true)
     try {
-      const response = await axios.get(`${API_BASE_URL}/kernels/${benchmarkName}`)
+      const response = await axios.get(`${API_BASE_URL}/kernels/${benchmarkName}`, {
+        params: { kernel_type: kernelType }
+      })
       setKernelCode(response.data)
       setIsCodeViewerOpen(true)
     } catch (err: any) {
@@ -111,26 +127,26 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
-      <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8 flex items-center justify-between">
-          <div>
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+      {/* Sidebar */}
+      <Sidebar
+        kernelType={kernelType}
+        onKernelTypeChange={setKernelType}
+        onHistoryClick={() => setIsHistoryOpen(true)}
+      />
+
+      {/* Main Content */}
+      <main className="flex-1 ml-64">
+        <div className="container mx-auto px-4 py-8">
+          {/* Header */}
+          <div className="mb-8">
             <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-              Molfun Benchmarks Dashboard
+              {kernelType === 'models' ? 'Model Kernels' : 'Analysis Kernels'}
             </h1>
             <p className="text-gray-600 dark:text-gray-400">
               Professional benchmarking dashboard for Triton kernels
             </p>
           </div>
-          <button
-            onClick={() => setIsHistoryOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-lg font-medium transition-colors"
-          >
-            <History className="w-5 h-5" />
-            History
-          </button>
-        </div>
 
         {/* Error Display */}
         {error && (
@@ -287,26 +303,27 @@ export default function Home() {
             )}
           </div>
         )}
-      </div>
+        </div>
 
-      {/* Code Viewer Panel */}
-      {kernelCode && (
-        <CodeViewer
-          isOpen={isCodeViewerOpen}
-          onClose={() => setIsCodeViewerOpen(false)}
-          benchmarkCode={kernelCode.benchmark_code}
-          benchmarkFilename={kernelCode.benchmark_filename}
-          kernelCode={kernelCode.kernel_code}
-          kernelFilename={kernelCode.kernel_filename}
+        {/* Code Viewer Panel */}
+        {kernelCode && (
+          <CodeViewer
+            isOpen={isCodeViewerOpen}
+            onClose={() => setIsCodeViewerOpen(false)}
+            benchmarkCode={kernelCode.benchmark_code}
+            benchmarkFilename={kernelCode.benchmark_filename}
+            kernelCode={kernelCode.kernel_code}
+            kernelFilename={kernelCode.kernel_filename}
+          />
+        )}
+
+        {/* History Panel */}
+        <HistoryPanel
+          isOpen={isHistoryOpen}
+          onClose={() => setIsHistoryOpen(false)}
+          onSelectResult={loadResultFromHistory}
         />
-      )}
-
-      {/* History Panel */}
-      <HistoryPanel
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
-        onSelectResult={loadResultFromHistory}
-      />
-    </main>
+      </main>
+    </div>
   )
 }

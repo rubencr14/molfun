@@ -1,25 +1,25 @@
 """
-src/benchmarks/bench_esm_fused_mlp12_synth_t30.py
+molfun/benchmarks/bench_esm_fused_mlp1_synth_t30.py
 
-Benchmark HuggingFace ESM-2 t30 (150M) baseline vs. patched MLP1+MLP2 using Triton.
-
-Patched changes per encoder layer:
-- MLP1: intermediate.forward(hidden_states) -> fused_linear_gelu_triton(hidden_states, W1, b1)
-- MLP2: output.forward(hidden_states, input_tensor) -> fused_linear_bias_residual_triton(
-          hidden_states, W2, b2, residual=input_tensor
-        )
-  ثم نُبقي LayerNorm / dropout كما في HF (dropout في eval() عادة no-op).
+Benchmark HuggingFace ESM-2 t30 (150M) baseline vs. patched MLP1 using Triton fused Linear+Bias+GELU.
+This version uses ONLY synthetic protein-like sequences (valid amino-acid letters),
+so it is fully reproducible and does not depend on FASTA files.
 
 Usage:
-  python src/benchmarks/bench_esm_fused_mlp12_synth_t30.py
+  python molfun/benchmarks/bench_esm_fused_mlp1_synth_t30.py
+
+What it measures:
+- Baseline: stock EsmModel forward pass
+- Patched : same model, but the first MLP projection per layer (intermediate.dense + GELU)
+            is replaced with fused_linear_gelu_triton(hidden_states, W, b)
 
 Notes:
 - Inference only.
 - Uses CUDA events for accurate timing.
 - Includes correctness checks (max/mean abs diff) on last_hidden_state.
-- Uses synthetic "protein-like" sequences (canonical AA letters) for reproducibility.
-- If you want to profile:
-    nsys profile -o esm_patch_t30_mlp12 --force-overwrite true python .../bench_esm_fused_mlp12_synth_t30.py
+- Model is larger (150M params) so benchmark cases are adjusted accordingly.
+- If you want to profile, run:
+    nsys profile -o esm_patch_t30 --force-overwrite true python .../bench_esm_fused_mlp1_synth_t30.py
 """
 
 import types
@@ -29,13 +29,12 @@ from typing import List, Dict, Tuple, Any
 import torch
 from transformers import AutoTokenizer, EsmModel
 
-from src.kernels.fused_linear_gelu_triton import fused_linear_gelu_triton
-from src.kernels.fused_linear_bias_residual_triton import fused_linear_bias_residual_triton
+from molfun.kernels.models.fused_linear_gelu_triton import fused_linear_gelu_triton
 
 
 @dataclass
 class BenchCfg:
-    model_id: str = "facebook/esm2_t30_150M_UR50D"
+    model_id: str = "facebook/esm2_t30_150M_UR50D"  # medium model
     device: str = "cuda"
     dtype: torch.dtype = torch.float16
     iters: int = 50
@@ -48,6 +47,7 @@ def time_it_cuda(fn, iters: int, warmup: int) -> float:
         _ = fn()
     torch.cuda.synchronize()
 
+    # CUDA events give accurate GPU timing (better than time.perf_counter for micro timings)
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
 
@@ -62,79 +62,78 @@ def time_it_cuda(fn, iters: int, warmup: int) -> float:
 
 
 def make_protein_like_sequences(batch_size: int, seq_len: int) -> List[str]:
+    """
+    Create deterministic synthetic sequences using canonical amino acid letters.
+    These are "protein-like" in the sense they use valid AA tokens, but they are not real proteins.
+    For performance benchmarking this is sufficient because runtime depends on tensor shapes (B, L),
+    not on biological realism.
+    """
     alphabet = "ACDEFGHIKLMNPQRSTVWY"  # 20 canonical amino acids
     seq = (alphabet * ((seq_len // len(alphabet)) + 1))[:seq_len]
     return [seq for _ in range(batch_size)]
 
 
-def patch_mlp12_fused(model: EsmModel):
+def patch_mlp1_fused(model: EsmModel):
     """
-    Patch each encoder layer:
-      - intermediate.forward(hidden_states) = fused_linear_gelu_triton(hidden_states, W1, b1)
-      - output.forward(hidden_states, input_tensor) uses fused_linear_bias_residual_triton
-        to fuse: dense2 + bias + residual-add. LayerNorm/dropout preserved.
-    Returns list of (orig_intermediate_forward, orig_output_forward) so we can restore.
+    Patch each encoder layer so that:
+        intermediate.forward(hidden_states) == fused_linear_gelu_triton(hidden_states, W, b)
+
+    In HF ESM, layer.intermediate.dense is the first MLP Linear (D -> 4D), and the module's forward
+    applies dense + activation. By replacing intermediate.forward, we fuse dense+bias+gelu in one kernel.
+
+    Returns a list of original forward callables so we can restore them after benchmarking.
     """
     originals = []
 
     for layer in model.encoder.layer:
         intermediate = layer.intermediate
-        output = layer.output
 
-        originals.append((intermediate.forward, output.forward))
+        # Save the original forward so we can restore
+        originals.append(intermediate.forward)
 
-        # ---- Patch MLP1 (Dense1 + GELU) ----
-        def new_intermediate_forward(self_intermediate, hidden_states):
-            w1 = self_intermediate.dense.weight
-            b1 = self_intermediate.dense.bias
-            return fused_linear_gelu_triton(hidden_states, w1, b1)
+        # Define patched forward
+        def new_forward(self_intermediate, hidden_states):
+            # hidden_states: [B, T, D]
+            # dense.weight layout: [4D, D] (out_features, in_features)
+            # dense.bias layout:   [4D]
+            w = self_intermediate.dense.weight
+            b = self_intermediate.dense.bias
+            return fused_linear_gelu_triton(hidden_states, w, b)
 
-        intermediate.forward = types.MethodType(new_intermediate_forward, intermediate)
-
-        # ---- Patch MLP2 (Dense2 + bias + residual add) ----
-        # HF ESM output forward is typically: forward(hidden_states, input_tensor)
-        def new_output_forward(self_output, hidden_states, input_tensor):
-            w2 = self_output.dense.weight
-            b2 = self_output.dense.bias
-
-            # Fuse: input_tensor + (hidden_states @ W2^T + b2)
-            y = fused_linear_bias_residual_triton(hidden_states, w2, b2, residual=input_tensor)
-
-            # Preserve HF semantics (dropout is usually no-op in eval())
-            if hasattr(self_output, "dropout") and self_output.dropout is not None:
-                y = self_output.dropout(y)
-
-            # Preserve LayerNorm if present
-            if hasattr(self_output, "LayerNorm") and self_output.LayerNorm is not None:
-                y = self_output.LayerNorm(y)
-
-            return y
-
-        output.forward = types.MethodType(new_output_forward, output)
+        # Bind the function to this module instance (so "self_intermediate" works)
+        intermediate.forward = types.MethodType(new_forward, intermediate)
 
     return originals
 
 
-def unpatch_mlp12(model: EsmModel, originals):
-    """Restore original intermediate.forward and output.forward for each layer."""
-    for layer, (orig_inter, orig_out) in zip(model.encoder.layer, originals):
-        layer.intermediate.forward = orig_inter
-        layer.output.forward = orig_out
+def unpatch_mlp1(model: EsmModel, originals):
+    """
+    Restore original intermediate.forward methods for each layer.
+    """
+    for layer, orig in zip(model.encoder.layer, originals):
+        layer.intermediate.forward = orig
 
 
 @torch.inference_mode()
 def forward_last_hidden(model: EsmModel, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+    """
+    Run a forward pass and return last_hidden_state.
+    """
     return model(**batch).last_hidden_state
 
 
 def run_benchmark() -> List[Dict[str, Any]]:
+    """Ejecuta el benchmark y devuelve resultados estructurados"""
     cfg = BenchCfg()
     assert torch.cuda.is_available(), "CUDA required"
     torch.set_grad_enabled(False)
 
+    # Load tokenizer + model
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_id, do_lower_case=False)
     model = EsmModel.from_pretrained(cfg.model_id).to(cfg.device).eval().to(cfg.dtype)
 
+    # Benchmark cases: (batch_size, sequence_length)
+    # Adjusted for larger model (150M params) - more conservative batch sizes
     cases: List[Tuple[int, int]] = [
         (1, 256),
         (1, 512),
@@ -149,7 +148,10 @@ def run_benchmark() -> List[Dict[str, Any]]:
     results = []
 
     for B, L in cases:
+        # Create synthetic protein-like sequences
         seqs = make_protein_like_sequences(B, L)
+
+        # Tokenize (padding is trivial here since all sequences are same length)
         batch = tokenizer(
             seqs,
             return_tensors="pt",
@@ -157,37 +159,41 @@ def run_benchmark() -> List[Dict[str, Any]]:
             truncation=True,
         )
         batch = {k: v.to(cfg.device) for k, v in batch.items()}
+
+        # Approx token count (includes special tokens, but that's fine for throughput comparisons)
         tokens = int(batch["attention_mask"].sum().item())
 
-        # --- Baseline timing ---
+        # --- Baseline timing (stock model) ---
         t_base = time_it_cuda(lambda: forward_last_hidden(model, batch), cfg.iters, cfg.warmup)
 
-        # --- Patched timing (MLP1 + MLP2 fused) ---
-        originals = patch_mlp12_fused(model)
+        # --- Patched timing (fused MLP1) ---
+        originals = patch_mlp1_fused(model)
 
-        # Trigger Triton JIT/autotune once
+        # Trigger Triton JIT/autotune once before timing
         _ = forward_last_hidden(model, batch)
         torch.cuda.synchronize()
 
         t_pat = time_it_cuda(lambda: forward_last_hidden(model, batch), cfg.iters, cfg.warmup)
 
         # --- Correctness check ---
-        unpatch_mlp12(model, originals)
+        # Restore baseline and compute reference output
+        unpatch_mlp1(model, originals)
         y_ref = forward_last_hidden(model, batch)
 
-        originals = patch_mlp12_fused(model)
+        # Re-patch and compute patched output
+        originals = patch_mlp1_fused(model)
         y_pat = forward_last_hidden(model, batch)
-        unpatch_mlp12(model, originals)
+        unpatch_mlp1(model, originals)
 
         max_abs = (y_ref - y_pat).abs().max().item()
         mean_abs = (y_ref - y_pat).abs().mean().item()
 
         speedup = t_base / t_pat if t_pat > 0 else float("inf")
-        tok_per_s_base = tokens / (t_base / 1e3)
+        tok_per_s_base = tokens / (t_base / 1e3)  # tokens/sec
         tok_per_s_pat = tokens / (t_pat / 1e3)
 
         results.append({
-            "benchmark_name": "esm_fused_mlp12_synth_t30",
+            "benchmark_name": "esm_fused_mlp1_synth_t30",
             "case_name": f"B={B}_L={L}",
             "baseline_time_ms": round(t_base, 3),
             "triton_time_ms": round(t_pat, 3),
@@ -210,12 +216,12 @@ def run_benchmark() -> List[Dict[str, Any]]:
 
 
 def main():
-    cfg = BenchCfg()
     results = run_benchmark()
-
+    cfg = BenchCfg()
+    
     print(f"Model: {cfg.model_id} | dtype: {cfg.dtype} | device: {cfg.device}")
     print(f"Iters: {cfg.iters}, warmup: {cfg.warmup}")
-    print("Benchmark: Baseline vs Patched (fused MLP1 + fused MLP2+residual)\n")
+    print("Benchmark: Baseline vs Patched (fused MLP1)\n")
 
     for result in results:
         meta = result["metadata"]

@@ -1,4 +1,4 @@
-# src/kernels/bias_gelu_triton.py
+# molfun/kernels/bias_gelu_triton.py
 
 # We enable postponed evaluation of annotations (nice-to-have, not required)
 from __future__ import annotations

@@ -1,12 +1,12 @@
 """
-src/benchmarks/bench_esm_fused_mlp1_synth_t30.py
+molfun/benchmarks/bench_esm_fused_mlp1_synth.py
 
-Benchmark HuggingFace ESM-2 t30 (150M) baseline vs. patched MLP1 using Triton fused Linear+Bias+GELU.
+Benchmark HuggingFace ESM baseline vs. patched MLP1 using Triton fused Linear+Bias+GELU.
 This version uses ONLY synthetic protein-like sequences (valid amino-acid letters),
 so it is fully reproducible and does not depend on FASTA files.
 
 Usage:
-  python src/benchmarks/bench_esm_fused_mlp1_synth_t30.py
+  python molfun/benchmarks/bench_esm_fused_mlp1_synth.py
 
 What it measures:
 - Baseline: stock EsmModel forward pass
@@ -17,9 +17,8 @@ Notes:
 - Inference only.
 - Uses CUDA events for accurate timing.
 - Includes correctness checks (max/mean abs diff) on last_hidden_state.
-- Model is larger (150M params) so benchmark cases are adjusted accordingly.
 - If you want to profile, run:
-    nsys profile -o esm_patch_t30 --force-overwrite true python .../bench_esm_fused_mlp1_synth_t30.py
+    nsys profile -o esm_patch --force-overwrite true python .../bench_esm_fused_mlp1_synth.py
 """
 
 import types
@@ -29,12 +28,12 @@ from typing import List, Dict, Tuple, Any
 import torch
 from transformers import AutoTokenizer, EsmModel
 
-from src.kernels.fused_linear_gelu_triton import fused_linear_gelu_triton
+from molfun.kernels.models.fused_linear_gelu_triton import fused_linear_gelu_triton
 
 
 @dataclass
 class BenchCfg:
-    model_id: str = "facebook/esm2_t30_150M_UR50D"  # medium model
+    model_id: str = "facebook/esm2_t6_8M_UR50D"  # small, good for iteration
     device: str = "cuda"
     dtype: torch.dtype = torch.float16
     iters: int = 50
@@ -133,16 +132,16 @@ def run_benchmark() -> List[Dict[str, Any]]:
     model = EsmModel.from_pretrained(cfg.model_id).to(cfg.device).eval().to(cfg.dtype)
 
     # Benchmark cases: (batch_size, sequence_length)
-    # Adjusted for larger model (150M params) - more conservative batch sizes
+    # Keep these realistic for ESM-2 small; increase as desired.
     cases: List[Tuple[int, int]] = [
         (1, 256),
         (1, 512),
         (1, 1024),
-        (2, 512),
+        (1, 2048),
         (2, 1024),
-        (4, 512),
         (4, 1024),
-        (8, 512),
+        (8, 1024),
+        (16, 1024),
     ]
 
     results = []
@@ -193,7 +192,7 @@ def run_benchmark() -> List[Dict[str, Any]]:
         tok_per_s_pat = tokens / (t_pat / 1e3)
 
         results.append({
-            "benchmark_name": "esm_fused_mlp1_synth_t30",
+            "benchmark_name": "esm_fused_mlp1_synth",
             "case_name": f"B={B}_L={L}",
             "baseline_time_ms": round(t_base, 3),
             "triton_time_ms": round(t_pat, 3),

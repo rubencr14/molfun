@@ -1,4 +1,4 @@
-# src/kernels/layernorm_triton.py
+# molfun/kernels/layernorm_triton.py
 #
 # Triton LayerNorm (inference) over last dimension:
 #   y = (x - mean) / sqrt(var + eps) * gamma + beta

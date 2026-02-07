@@ -1,4 +1,4 @@
-# src/kernels/fused_linear_bias_residual_triton.py
+# molfun/kernels/fused_linear_bias_residual_triton.py
 #
 # Fused: Y = residual + (H @ W^T + b)
 # - H shape: [M, K]    (e.g., GELU output, flattened tokens)
