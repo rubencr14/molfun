@@ -13,6 +13,7 @@ from molfun.models.openfold import OpenFold
 from molfun.adapters.openfold import OpenFoldAdapter
 from molfun.peft.lora import MolfunPEFT, LoRALinear
 from molfun.heads.affinity import AffinityHead
+from molfun.training import HeadOnlyFinetune, LoRAFinetune
 from molfun.core.types import TrunkOutput
 
 
@@ -86,16 +87,19 @@ class TestOpenFoldWrapper:
         assert isinstance(out, TrunkOutput)
         assert out.single_repr.shape[-1] == DIM
 
-    def test_fine_tune_lora_builtin(self):
+    def test_lora_setup_and_forward(self):
         wrapper = self._make_model(
-            fine_tune=True,
-            peft="lora",
-            peft_config={"rank": 4, "alpha": 8.0, "target_modules": ["linear_q", "linear_v"], "use_hf": False},
             head="affinity",
             head_config={"single_dim": DIM, "hidden_dim": 32},
         )
+        strategy = LoRAFinetune(
+            rank=4, alpha=8.0,
+            target_modules=["linear_q", "linear_v"], use_hf=False,
+            lr_head=1e-3, lr_lora=1e-4,
+        )
+        strategy.setup(wrapper)
+
         info = wrapper.summary()
-        assert info["fine_tune"] is True
         assert info["peft"]["method"] == "lora"
         assert info["head"]["type"] == "AffinityHead"
 
@@ -105,11 +109,12 @@ class TestOpenFoldWrapper:
 
     def test_fit_one_epoch(self):
         wrapper = self._make_model(
-            fine_tune=True,
-            peft="lora",
-            peft_config={"rank": 4, "target_modules": ["linear_q", "linear_v"], "use_hf": False},
             head="affinity",
             head_config={"single_dim": DIM, "hidden_dim": 32},
+        )
+        strategy = LoRAFinetune(
+            rank=4, target_modules=["linear_q", "linear_v"], use_hf=False,
+            lr_head=1e-3, lr_lora=1e-3, amp=False, scheduler="constant",
         )
 
         N = 4
@@ -119,39 +124,44 @@ class TestOpenFoldWrapper:
         dataset = list(zip(dummy_features, dummy_targets))
         loader = DataLoader(dataset, batch_size=2, collate_fn=_collate_fn)
 
-        history = wrapper.fit(loader, epochs=1, lr=1e-3, amp=False)
+        history = wrapper.fit(loader, strategy=strategy, epochs=1)
         assert len(history) == 1
         assert "train_loss" in history[0]
 
     def test_save_load(self, tmp_path):
         wrapper = self._make_model(
-            fine_tune=True,
-            peft="lora",
-            peft_config={"rank": 4, "target_modules": ["linear_q", "linear_v"], "use_hf": False},
             head="affinity",
             head_config={"single_dim": DIM, "hidden_dim": 32},
         )
+        strategy = LoRAFinetune(
+            rank=4, target_modules=["linear_q", "linear_v"], use_hf=False,
+            lr_head=1e-3, lr_lora=1e-3,
+        )
+        strategy.setup(wrapper)
 
         save_dir = str(tmp_path / "checkpoint")
         wrapper.save(save_dir)
 
         wrapper2 = self._make_model(
-            fine_tune=True,
-            peft="lora",
-            peft_config={"rank": 4, "target_modules": ["linear_q", "linear_v"], "use_hf": False},
             head="affinity",
             head_config={"single_dim": DIM, "hidden_dim": 32},
         )
+        strategy2 = LoRAFinetune(
+            rank=4, target_modules=["linear_q", "linear_v"], use_hf=False,
+            lr_head=1e-3, lr_lora=1e-3,
+        )
+        strategy2.setup(wrapper2)
         wrapper2.load(save_dir)
 
     def test_merge_unmerge(self):
         wrapper = self._make_model(
-            fine_tune=True,
-            peft="lora",
-            peft_config={"rank": 4, "target_modules": ["linear_q", "linear_v"], "use_hf": False},
             head="affinity",
             head_config={"single_dim": DIM, "hidden_dim": 32},
         )
+        strategy = LoRAFinetune(
+            rank=4, target_modules=["linear_q", "linear_v"], use_hf=False,
+        )
+        strategy.setup(wrapper)
 
         out_before = wrapper.forward({})
         wrapper.merge()
@@ -162,16 +172,16 @@ class TestOpenFoldWrapper:
 
     def test_head_only_no_peft(self):
         wrapper = self._make_model(
-            fine_tune=True,
             head="affinity",
             head_config={"single_dim": DIM, "hidden_dim": 32},
         )
+        strategy = HeadOnlyFinetune(lr=1e-3)
+        strategy.setup(wrapper)
+
         info = wrapper.summary()
         assert "peft" not in info
         assert info["head"]["type"] == "AffinityHead"
-
-        trunk_trainable = info["adapter"]["trainable"]
-        assert trunk_trainable == 0
+        assert info["adapter"]["trainable"] == 0
 
 
 class TestAdapterStandalone:
@@ -261,51 +271,82 @@ class TestMolfunStructureModel:
         out = m.predict({})
         assert isinstance(out, TrunkOutput)
 
-    def test_fine_tune_lora(self):
+    def test_lora_setup(self):
         m = self._make(
-            fine_tune=True,
-            peft="lora",
-            peft_config={"rank": 4, "target_modules": ["linear_q", "linear_v"], "use_hf": False},
             head="affinity",
             head_config={"single_dim": DIM, "hidden_dim": 32},
         )
+        strategy = LoRAFinetune(
+            rank=4, target_modules=["linear_q", "linear_v"], use_hf=False,
+        )
+        strategy.setup(m)
+
         info = m.summary()
         assert info["name"] == "openfold"
         assert info["peft"]["method"] == "lora"
         assert info["head"]["type"] == "AffinityHead"
+        assert info["strategy"]["strategy"] == "LoRAFinetune"
 
     def test_fit(self):
         m = self._make(
-            fine_tune=True,
-            peft="lora",
-            peft_config={"rank": 4, "target_modules": ["linear_q", "linear_v"], "use_hf": False},
             head="affinity",
             head_config={"single_dim": DIM, "hidden_dim": 32},
+        )
+        strategy = LoRAFinetune(
+            rank=4, target_modules=["linear_q", "linear_v"], use_hf=False,
+            lr_head=1e-3, lr_lora=1e-3, amp=False, scheduler="constant",
         )
         dataset = list(zip([{} for _ in range(4)], torch.randn(4, 1, device=DEVICE)))
         loader = DataLoader(dataset, batch_size=2, collate_fn=_collate_fn)
-        history = m.fit(loader, epochs=1, lr=1e-3, amp=False)
+        history = m.fit(loader, strategy=strategy, epochs=1)
         assert len(history) == 1
 
-    def test_save_load(self, tmp_path):
+    def test_fit_remembers_strategy(self):
         m = self._make(
-            fine_tune=True,
-            peft="lora",
-            peft_config={"rank": 4, "target_modules": ["linear_q"], "use_hf": False},
             head="affinity",
             head_config={"single_dim": DIM, "hidden_dim": 32},
         )
+        strategy = HeadOnlyFinetune(lr=1e-3, amp=False, scheduler="constant")
+        dataset = list(zip([{} for _ in range(2)], torch.randn(2, 1, device=DEVICE)))
+        loader = DataLoader(dataset, batch_size=2, collate_fn=_collate_fn)
+
+        m.fit(loader, strategy=strategy, epochs=1)
+        history2 = m.fit(loader, epochs=1)
+        assert len(history2) == 1
+
+    def test_fit_no_strategy_raises(self):
+        m = self._make(head="affinity", head_config={"single_dim": DIM, "hidden_dim": 32})
+        loader = DataLoader([(torch.zeros(1), torch.zeros(1))], batch_size=1)
+        with pytest.raises(RuntimeError, match="No strategy"):
+            m.fit(loader, epochs=1)
+
+    def test_fit_no_head_raises(self):
+        m = self._make()
+        loader = DataLoader([(torch.zeros(1), torch.zeros(1))], batch_size=1)
+        with pytest.raises(RuntimeError, match="No head"):
+            m.fit(loader, strategy=HeadOnlyFinetune(), epochs=1)
+
+    def test_save_load(self, tmp_path):
+        m = self._make(
+            head="affinity",
+            head_config={"single_dim": DIM, "hidden_dim": 32},
+        )
+        strategy = LoRAFinetune(
+            rank=4, target_modules=["linear_q"], use_hf=False,
+        )
+        strategy.setup(m)
         m.save(str(tmp_path / "ckpt"))
         assert (tmp_path / "ckpt" / "meta.pt").exists()
         assert (tmp_path / "ckpt" / "head.pt").exists()
 
         m2 = self._make(
-            fine_tune=True,
-            peft="lora",
-            peft_config={"rank": 4, "target_modules": ["linear_q"], "use_hf": False},
             head="affinity",
             head_config={"single_dim": DIM, "hidden_dim": 32},
         )
+        strategy2 = LoRAFinetune(
+            rank=4, target_modules=["linear_q"], use_hf=False,
+        )
+        strategy2.setup(m2)
         m2.load(str(tmp_path / "ckpt"))
 
     def test_unknown_model_raises(self):
@@ -315,12 +356,7 @@ class TestMolfunStructureModel:
     def test_unknown_head_raises(self):
         mock = _MockOpenFold(DIM)
         with pytest.raises(ValueError, match="Unknown head"):
-            MolfunStructureModel("openfold", model=mock, device=DEVICE, fine_tune=True, head="bad")
-
-    def test_unknown_peft_raises(self):
-        mock = _MockOpenFold(DIM)
-        with pytest.raises(ValueError, match="Unknown PEFT"):
-            MolfunStructureModel("openfold", model=mock, device=DEVICE, fine_tune=True, peft="bad")
+            MolfunStructureModel("openfold", model=mock, device=DEVICE, head="bad")
 
     def test_available_models(self):
         models = MolfunStructureModel.available_models()

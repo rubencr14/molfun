@@ -68,7 +68,6 @@ class DummyOpenFoldDataset(Dataset):
 
         aatype = torch.randint(0, 20, (L,))
 
-        # Let OpenFold generate proper atom features from aatype
         protein = {
             "aatype": aatype,
             "all_atom_positions": torch.zeros(L, 37, 3),
@@ -89,7 +88,6 @@ class DummyOpenFoldDataset(Dataset):
             "msa_mask": torch.ones(N, L),
             "seq_mask": torch.ones(L),
             "pair_mask": torch.ones(L, L),
-            # Atom features from OpenFold's transforms
             "residx_atom14_to_atom37": protein["residx_atom14_to_atom37"],
             "residx_atom37_to_atom14": protein["residx_atom37_to_atom14"],
             "atom14_atom_exists": protein["atom14_atom_exists"],
@@ -99,7 +97,6 @@ class DummyOpenFoldDataset(Dataset):
             "atom14_alt_gt_exists": protein["atom14_alt_gt_exists"],
             "atom14_alt_gt_positions": protein["atom14_alt_gt_positions"],
             "atom14_atom_is_ambiguous": protein["atom14_atom_is_ambiguous"],
-            # Templates (empty/dummy)
             "template_aatype": torch.randint(0, 20, (T, L)),
             "template_all_atom_positions": torch.zeros(T, L, 37, 3),
             "template_all_atom_mask": torch.zeros(T, L, 37),
@@ -111,7 +108,6 @@ class DummyOpenFoldDataset(Dataset):
             "template_torsion_angles_mask": torch.zeros(T, L, 7),
         }
 
-        # Append recycling dimension (R=1) to all tensors
         features = {k: v.unsqueeze(-1) for k, v in features.items()}
 
         label = torch.randn(1)
@@ -147,7 +143,7 @@ class TestOpenFoldReal:
 
         adapter = OpenFoldAdapter(config=self.config, device="cuda")
         info = adapter.param_summary()
-        assert info["total"] > 90_000_000  # ~93M params
+        assert info["total"] > 90_000_000
         assert info["trainable"] == info["total"]
 
     @skip_no_weights
@@ -181,62 +177,60 @@ class TestOpenFoldReal:
 
         out = model.predict(batch)
         assert out.single_repr is not None
-        assert out.single_repr.shape[-1] == 384  # c_s
+        assert out.single_repr.shape[-1] == 384
 
     @skip_no_weights
     def test_freeze_and_peft(self):
-        """Freeze trunk, apply LoRA, verify param counts."""
+        """Freeze trunk via LoRA strategy, verify param counts."""
         from molfun.models.structure import MolfunStructureModel
+        from molfun.training import LoRAFinetune
 
         model = MolfunStructureModel(
             "openfold",
             config=self.config,
             weights=str(WEIGHTS_PATH),
             device="cuda",
-            fine_tune=True,
-            peft="lora",
-            peft_config={
-                "rank": 4,
-                "alpha": 8.0,
-                "target_modules": ["linear_q", "linear_v"],
-                "use_hf": False,
-            },
             head="affinity",
             head_config={"single_dim": 384, "hidden_dim": 128},
         )
 
+        strategy = LoRAFinetune(
+            rank=4, alpha=8.0,
+            target_modules=["linear_q", "linear_v"], use_hf=False,
+        )
+        strategy.setup(model)
+
         info = model.summary()
         assert info["adapter"]["frozen"] > 90_000_000
         assert info["peft"]["trainable_params"] > 0
-        assert info["peft"]["trainable_pct"] < 1.0  # < 1% trainable
+        assert info["peft"]["trainable_pct"] < 1.0
         assert info["head"]["type"] == "AffinityHead"
 
     @skip_no_weights
     def test_fine_tune_one_step(self):
         """Run 1 training step with real OpenFold + LoRA + AffinityHead."""
         from molfun.models.structure import MolfunStructureModel
+        from molfun.training import LoRAFinetune
 
         model = MolfunStructureModel(
             "openfold",
             config=self.config,
             weights=str(WEIGHTS_PATH),
             device="cuda",
-            fine_tune=True,
-            peft="lora",
-            peft_config={
-                "rank": 4,
-                "target_modules": ["linear_q", "linear_v"],
-                "use_hf": False,
-            },
             head="affinity",
             head_config={"single_dim": 384, "hidden_dim": 128},
+        )
+
+        strategy = LoRAFinetune(
+            rank=4,
+            target_modules=["linear_q", "linear_v"], use_hf=False,
+            lr_head=1e-4, lr_lora=1e-4, amp=False,
         )
 
         ds = DummyOpenFoldDataset(n_samples=2, seq_len=16, n_msa=4)
         loader = DataLoader(ds, batch_size=1, collate_fn=_collate)
 
-        # AMP disabled: OpenFold's PTM score hits NaN with float16 + tiny sequences
-        history = model.fit(loader, epochs=1, lr=1e-4, amp=False)
+        history = model.fit(loader, strategy=strategy, epochs=1)
         assert len(history) == 1
         assert "train_loss" in history[0]
         assert history[0]["train_loss"] > 0
@@ -245,27 +239,29 @@ class TestOpenFoldReal:
     def test_save_load_round_trip(self, tmp_path):
         """Save fine-tuned state, load into fresh model, verify consistency."""
         from molfun.models.structure import MolfunStructureModel
+        from molfun.training import LoRAFinetune
 
-        peft_config = {"rank": 4, "target_modules": ["linear_q"], "use_hf": False}
+        lora_kwargs = dict(rank=4, target_modules=["linear_q"], use_hf=False)
         head_config = {"single_dim": 384, "hidden_dim": 64}
 
         m1 = MolfunStructureModel(
             "openfold", config=self.config, weights=str(WEIGHTS_PATH),
-            device="cuda", fine_tune=True, peft="lora",
-            peft_config=peft_config, head="affinity", head_config=head_config,
+            device="cuda", head="affinity", head_config=head_config,
         )
+        s1 = LoRAFinetune(**lora_kwargs)
+        s1.setup(m1)
 
         ckpt_dir = str(tmp_path / "real_ckpt")
         m1.save(ckpt_dir)
 
         m2 = MolfunStructureModel(
             "openfold", config=self.config, weights=str(WEIGHTS_PATH),
-            device="cuda", fine_tune=True, peft="lora",
-            peft_config=peft_config, head="affinity", head_config=head_config,
+            device="cuda", head="affinity", head_config=head_config,
         )
+        s2 = LoRAFinetune(**lora_kwargs)
+        s2.setup(m2)
         m2.load(ckpt_dir)
 
-        # Verify LoRA + head weights were restored exactly
         for (_, n1, l1), (_, n2, l2) in zip(
             m1._peft._builtin_layers, m2._peft._builtin_layers
         ):

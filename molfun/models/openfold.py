@@ -2,7 +2,6 @@
 OpenFold convenience wrapper.
 
 Thin alias for MolfunStructureModel(name="openfold", ...).
-Kept for backward compatibility.
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ class OpenFold(MolfunStructureModel):
 
     Usage:
         model = OpenFold(config=cfg, weights="ckpt.pt")
-        model = OpenFold(config=cfg, fine_tune=True, peft="lora", head="affinity", ...)
+        model = OpenFold(config=cfg, head="affinity", head_config={...})
     """
 
     def __init__(
@@ -27,9 +26,6 @@ class OpenFold(MolfunStructureModel):
         config: Optional[object] = None,
         weights: Optional[str] = None,
         device: str = "cuda",
-        fine_tune: bool = False,
-        peft: Optional[str] = None,
-        peft_config: Optional[dict] = None,
         head: Optional[str] = None,
         head_config: Optional[dict] = None,
     ):
@@ -39,9 +35,6 @@ class OpenFold(MolfunStructureModel):
             config=config,
             weights=weights,
             device=device,
-            fine_tune=fine_tune,
-            peft=peft,
-            peft_config=peft_config,
             head=head,
             head_config=head_config,
         )

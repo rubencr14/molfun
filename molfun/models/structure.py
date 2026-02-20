@@ -3,31 +3,25 @@ Unified structure model for inference and fine-tuning.
 
 Usage:
 
-    # Inference with OpenFold
+    # Inference
     model = MolfunStructureModel("openfold", config=cfg, weights="ckpt.pt")
     output = model.predict(batch)
 
-    # Fine-tuning with LoRA + affinity head
-    model = MolfunStructureModel(
-        "openfold",
-        config=cfg,
-        weights="ckpt.pt",
-        fine_tune=True,
-        peft="lora",
-        peft_config={"rank": 8},
-        head="affinity",
-        head_config={"single_dim": 384},
-    )
-    history = model.fit(train_loader, val_loader, epochs=10)
-    model.save("checkpoint/")
+    # Fine-tuning with strategy
+    from molfun.training import LoRAFinetune
 
-    # Future models use the same API
-    model = MolfunStructureModel("esmfold", ...)
+    model = MolfunStructureModel(
+        "openfold", config=cfg, weights="ckpt.pt",
+        head="affinity", head_config={"single_dim": 384},
+    )
+    strategy = LoRAFinetune(rank=8, lr_lora=1e-4, lr_head=1e-3)
+    history = model.fit(train_loader, val_loader, strategy=strategy, epochs=10)
+    model.save("checkpoint/")
 """
 
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -37,6 +31,9 @@ from molfun.adapters.base import BaseAdapter
 from molfun.peft.lora import MolfunPEFT
 from molfun.heads.affinity import AffinityHead
 from molfun.core.types import TrunkOutput
+
+if TYPE_CHECKING:
+    from molfun.training.base import FinetuneStrategy
 
 
 ADAPTER_REGISTRY: dict[str, type[BaseAdapter]] = {}
@@ -58,7 +55,11 @@ class MolfunStructureModel:
     Unified API for protein structure models.
 
     Wraps any registered adapter (OpenFold, ESMFold, ...) with a common
-    interface for inference, fine-tuning (PEFT), task heads, and checkpointing.
+    interface for inference, fine-tuning, task heads, and checkpointing.
+
+    The model itself is agnostic to the training strategy. Strategies
+    (HeadOnly, LoRA, Partial, Full) are passed to ``fit()`` and handle
+    all freezing, param groups, schedulers, EMA, etc.
     """
 
     def __init__(
@@ -68,9 +69,6 @@ class MolfunStructureModel:
         config: Optional[object] = None,
         weights: Optional[str] = None,
         device: str = "cuda",
-        fine_tune: bool = False,
-        peft: Optional[str] = None,
-        peft_config: Optional[dict] = None,
         head: Optional[str] = None,
         head_config: Optional[dict] = None,
     ):
@@ -81,19 +79,14 @@ class MolfunStructureModel:
             config: Backend-specific config object.
             weights: Path to model checkpoint.
             device: Target device.
-            fine_tune: Freeze trunk and enable PEFT + head training.
-            peft: PEFT method ("lora" or "ia3"). Requires fine_tune=True.
-            peft_config: PEFT kwargs (rank, alpha, target_modules, ...).
-            head: Task head name ("affinity"). Requires fine_tune=True.
+            head: Task head name ("affinity").
             head_config: Head kwargs (single_dim, hidden_dim, ...).
         """
         _register_adapters()
 
         self.name = name
         self.device = device
-        self.fine_tune = fine_tune
 
-        # 1. Adapter
         adapter_cls = ADAPTER_REGISTRY.get(name)
         if adapter_cls is None:
             raise ValueError(
@@ -103,24 +96,11 @@ class MolfunStructureModel:
             model=model, config=config, weights_path=weights, device=device,
         )
 
-        # 2. PEFT
         self._peft: Optional[MolfunPEFT] = None
-        if fine_tune and peft:
-            peft_config = peft_config or {}
-            if peft == "lora":
-                self._peft = MolfunPEFT.lora(**peft_config)
-            elif peft == "ia3":
-                self._peft = MolfunPEFT.ia3(**peft_config)
-            else:
-                raise ValueError(f"Unknown PEFT method: {peft}. Use 'lora' or 'ia3'.")
-            self.adapter.freeze_trunk()
-            self._peft.apply(self.adapter.peft_target_module)
-        elif fine_tune:
-            self.adapter.freeze_trunk()
+        self._strategy: Optional[FinetuneStrategy] = None
 
-        # 3. Head
         self.head: Optional[nn.Module] = None
-        if fine_tune and head:
+        if head:
             head_cls = HEAD_REGISTRY.get(head)
             if head_cls is None:
                 raise ValueError(f"Unknown head: {head}. Available: {list(HEAD_REGISTRY)}")
@@ -156,106 +136,32 @@ class MolfunStructureModel:
         self,
         train_loader: DataLoader,
         val_loader: Optional[DataLoader] = None,
+        strategy: Optional[FinetuneStrategy] = None,
         epochs: int = 10,
-        lr: float = 1e-4,
-        weight_decay: float = 0.01,
-        grad_clip: float = 1.0,
-        amp: bool = True,
-        loss_fn: str = "mse",
-        callbacks: Optional[list] = None,
     ) -> list[dict]:
         """
-        Fine-tune the model.
+        Fine-tune the model using the given strategy.
 
-        Returns list of per-epoch metrics dicts.
+        Args:
+            train_loader: Training data.
+            val_loader: Validation data (optional).
+            strategy: FinetuneStrategy instance (HeadOnly, LoRA, Partial, Full).
+            epochs: Number of training epochs.
+
+        Returns:
+            List of per-epoch metric dicts.
         """
+        if strategy is not None:
+            self._strategy = strategy
+        if self._strategy is None:
+            raise RuntimeError(
+                "No strategy provided. Pass e.g. strategy=HeadOnlyFinetune(lr=1e-3)"
+            )
         if self.head is None:
-            raise RuntimeError("No head configured. Pass head='affinity' to enable training.")
-
-        params = list(self.head.parameters())
-        if self._peft is not None:
-            params += self._peft.trainable_parameters()
-
-        optimizer = torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
-        scaler = torch.amp.GradScaler(enabled=amp)
-        history = []
-
-        for epoch in range(epochs):
-            self.adapter.train()
-            self.head.train()
-            train_metrics = self._train_epoch(train_loader, optimizer, scaler, grad_clip, amp, loss_fn)
-
-            val_metrics = {}
-            if val_loader is not None:
-                val_metrics = self._val_epoch(val_loader, loss_fn)
-
-            metrics = {"epoch": epoch + 1, **train_metrics, **val_metrics}
-            history.append(metrics)
-
-            if callbacks:
-                for cb in callbacks:
-                    cb.on_epoch_end(epoch, metrics)
-
-        return history
-
-    def _train_epoch(self, loader, optimizer, scaler, grad_clip, amp, loss_fn) -> dict:
-        total_loss = 0.0
-        n = 0
-        for batch_data in loader:
-            batch, targets, mask = self._unpack_batch(batch_data)
-            batch = _to_device(batch, self.device)
-            targets = targets.to(self.device)
-            if mask is not None:
-                mask = mask.to(self.device)
-            optimizer.zero_grad()
-            with torch.amp.autocast("cuda", enabled=amp):
-                result = self.forward(batch, mask=mask)
-                losses = self.head.loss(result["preds"], targets, loss_fn=loss_fn)
-                loss = losses["affinity_loss"]
-            scaler.scale(loss).backward()
-            if grad_clip > 0:
-                scaler.unscale_(optimizer)
-                all_params = list(self.head.parameters())
-                if self._peft:
-                    all_params += self._peft.trainable_parameters()
-                torch.nn.utils.clip_grad_norm_(all_params, grad_clip)
-            scaler.step(optimizer)
-            scaler.update()
-            total_loss += loss.item()
-            n += 1
-        return {"train_loss": total_loss / max(n, 1)}
-
-    @torch.no_grad()
-    def _val_epoch(self, loader, loss_fn) -> dict:
-        self.adapter.eval()
-        self.head.eval()
-        total_loss = 0.0
-        n = 0
-        for batch_data in loader:
-            batch, targets, mask = self._unpack_batch(batch_data)
-            batch = _to_device(batch, self.device)
-            targets = targets.to(self.device)
-            if mask is not None:
-                mask = mask.to(self.device)
-            result = self.forward(batch, mask=mask)
-            losses = self.head.loss(result["preds"], targets, loss_fn=loss_fn)
-            total_loss += losses["affinity_loss"].item()
-            n += 1
-        return {"val_loss": total_loss / max(n, 1)}
-
-    @staticmethod
-    def _unpack_batch(batch_data) -> tuple[dict, torch.Tensor, Optional[torch.Tensor]]:
-        if isinstance(batch_data, (list, tuple)):
-            if len(batch_data) == 3:
-                return batch_data[0], batch_data[1], batch_data[2]
-            features, targets = batch_data[0], batch_data[1]
-            mask = features.get("all_atom_mask") if isinstance(features, dict) else None
-            return features, targets, mask
-        if isinstance(batch_data, dict):
-            targets = batch_data.pop("labels")
-            mask = batch_data.get("all_atom_mask") or batch_data.get("mask")
-            return batch_data, targets, mask
-        raise ValueError(f"Unsupported batch format: {type(batch_data)}")
+            raise RuntimeError(
+                "No head configured. Pass head='affinity' to enable training."
+            )
+        return self._strategy.fit(self, train_loader, val_loader, epochs)
 
     # ------------------------------------------------------------------
     # Save / load
@@ -266,7 +172,9 @@ class MolfunStructureModel:
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
 
-        meta = {"name": self.name, "fine_tune": self.fine_tune}
+        meta = {"name": self.name}
+        if self._strategy is not None:
+            meta["strategy"] = self._strategy.describe()
         torch.save(meta, path / "meta.pt")
 
         if self._peft is not None:
@@ -298,10 +206,12 @@ class MolfunStructureModel:
             self._peft.unmerge()
 
     def summary(self) -> dict:
-        info = {"name": self.name, "device": self.device, "fine_tune": self.fine_tune}
+        info = {"name": self.name, "device": self.device}
         info["adapter"] = self.adapter.param_summary()
         if self._peft is not None:
             info["peft"] = self._peft.summary()
+        if self._strategy is not None:
+            info["strategy"] = self._strategy.describe()
         if self.head is not None:
             info["head"] = {
                 "type": type(self.head).__name__,
@@ -317,10 +227,3 @@ class MolfunStructureModel:
     @staticmethod
     def available_heads() -> list[str]:
         return list(HEAD_REGISTRY.keys())
-
-
-def _to_device(batch: dict, device: str) -> dict:
-    return {
-        k: v.to(device) if isinstance(v, torch.Tensor) else v
-        for k, v in batch.items()
-    }
