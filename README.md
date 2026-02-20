@@ -1,420 +1,238 @@
-# Molfun — GPU Kernels for Molecular Modeling
-
-![Molfun Banner](./docs/banner.png)
+# Molfun — Fine-Tuning & GPU Acceleration for Molecular ML
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](#installation)
 [![CUDA](https://img.shields.io/badge/CUDA-12%2B-green.svg)](#requirements)
-[![Code style](https://img.shields.io/badge/code%20style-ruff-black.svg)](https://github.com/astral-sh/ruff)
 
-**Molfun** is an open-source library that provides **high-performance GPU kernels** for **molecular modeling & molecular dynamics (MD) analysis**.
-
-The goal is simple: accelerate a small set of foundational primitives (distances, RMSD, contact queries) so downstream tasks—trajectory analysis, clustering, docking scoring, and ML feature generation—become faster and more scalable.
+**Molfun** is an open-source framework for **fine-tuning protein ML models** and **accelerating molecular simulations** on GPU. It provides a unified interface to adapt pre-trained structure prediction models (OpenFold/AlphaFold2, and in the future ESMFold, Protenix, docking models, etc.) to specific tasks like binding affinity prediction, with production-grade training infrastructure and high-performance Triton kernels.
 
 ---
 
-## Why Molfun?
+## What problem does Molfun solve?
 
-Molecular modeling pipelines spend a surprising amount of time on a small set of repeated operations:
+Pre-trained protein models like AlphaFold2 contain enormous amounts of structural knowledge, but using them for **specific scientific tasks** (predicting binding affinity, classifying protein families, scoring docking poses) requires fine-tuning — and doing it well is surprisingly hard.
 
-- distance computation & thresholding
-- RMSD / batch RMSD
-- contact maps & contact occupancy
-- centroids / radius of gyration
-- neighbor-style queries & sparse edge lists (roadmap)
+You need to decide **what to freeze**, **how to inject trainable parameters**, **which learning rate schedule** to use, and how to avoid catastrophic forgetting on a small dataset. You also need proper EMA, gradient accumulation, and early stopping to get stable results.
 
-Molfun focuses on accelerating these **building blocks** with careful attention to memory bandwidth and scalable batch processing.
-
-Beyond traditional MD analysis, Molfun's optimized kernels are essential for **training and inference of protein ML models** such as:
-- **AlphaFold** and structure prediction pipelines (contact map computation, distance features)
-- **ESM** (Evolutionary Scale Modeling) embeddings and protein language models
-- **Protenix** and other transformer-based architectures
-- Any model requiring efficient geometric features from protein structures
-
-These models rely heavily on:
-- **Geometric primitives**: contact maps, pairwise distances, and structural features—operations that Molfun accelerates with GPU-optimized kernels
-- **Core neural network operations**: GELU, SwiGLU, LayerNorm, and attention mechanisms—fundamental operations that Molfun optimizes through fused kernels to reduce memory traffic and kernel launch overhead
-
-By optimizing both geometric and neural network primitives, Molfun provides end-to-end acceleration for the entire protein ML training and inference pipeline.
-
----
-
-## Highlights
-
-- GPU-first analysis primitives with:
-  - coalesced memory access patterns
-  - avoiding unnecessary `sqrt` where possible (use `dist2 < cutoff2`)
-  - bit-packed outputs to reduce bandwidth (contact maps)
-  - batch-friendly APIs (where it matters)
-- Reproducible benchmarks against:
-  - PyTorch baselines
-  - MDAnalysis / MDTraj (CPU baselines)
-- Reference implementations for correctness and testing
-
----
-
-## Performance Benchmarks
-
-### RMSD with Superposition (Kabsch Alignment)
-
-Benchmark: 2501 frames, 3891 atoms (full protein), batch RMSD calculation with optimal alignment.
-
-| Method | Time | per Frame | vs Molfun |
-|--------|------|-----------|-----------|
-| **Molfun (Triton GPU)** | **0.71 ms** | **0.28 µs** | — |
-| PyTorch GPU (vectorized) | 2.21 ms | 0.88 µs | 3.1× slower |
-| MDTraj (C/Cython CPU) | 14.69 ms | 5.87 µs | 20.8× slower |
-| MDAnalysis (CPU) | 565.98 ms | 226.30 µs | 801× slower |
-
-**Key insights:**
-- **GPU vs GPU (fair comparison)**: Molfun's Triton kernels are **3.1× faster** than naive PyTorch GPU implementation
-- **GPU vs CPU**: Molfun is **21× faster** than MDTraj (optimized C) and **801× faster** than MDAnalysis
-
-### Contact Maps (Batch)
-
-Benchmark: 2501 frames, 254 atoms (Cα only), cutoff = 8.0 Å.
-
-| Method | Time | per Frame | vs Molfun |
-|--------|------|-----------|-----------|
-| **Molfun (Triton GPU)** | **66 ms** | **0.026 ms** | — |
-| PyTorch GPU (vectorized) | 71 ms | 0.028 ms | 1.1× slower |
-| MDTraj (CPU) | 2,432 ms | 0.97 ms | 37× slower |
-| MDAnalysis (CPU) | 3,163 ms | 1.26 ms | 48× slower |
-
-**Additional benefit**: Molfun uses **bit-packed storage** (8× less memory than boolean matrices).
-
-> All benchmarks run on NVIDIA GPU with CUDA 12+. Results may vary depending on hardware.
-
----
-
-## Optimization for Protein ML Models
-
-Molfun's GPU kernels are specifically optimized for **training and inference workflows** in modern protein ML architectures, covering both **geometric primitives** and **core neural network operations**:
-
-### Core Neural Network Operations
-
-Molfun provides optimized GPU kernels for fundamental operations used across all transformer-based protein models:
-
-- **GELU activation**: Fused `Linear + GELU` kernels reduce memory traffic and kernel launch overhead
-- **SwiGLU**: Optimized gated linear units (GLU) variants used in modern architectures (LLaMA, ESM-2)
-- **LayerNorm**: Efficient normalization kernels with reduced synchronization overhead
-- **Attention mechanisms**: Optimized attention kernels for protein sequence and structure attention
-
-These fused operations are **critical bottlenecks** in models like ESM, AlphaFold, and ProteinX, where they can account for 30-50% of training time.
-
-### Structure Prediction Models
-
-**AlphaFold** and similar structure prediction models require:
-- **Contact map computation** for attention mechanisms and loss functions
-- **Pairwise distance features** for geometric constraints
-- **Batch processing** of multiple structures during training
-- **Optimized MLP blocks** (fused Linear+GELU) in the folding trunk
-
-Molfun's bit-packed contact maps reduce memory bandwidth by **8×**, enabling larger batch sizes and faster training iterations.
-
-### Protein Language Models
-
-**ESM** (Evolutionary Scale Modeling) and **ProteinX** embeddings benefit from:
-- **Efficient distance computation** for structural features
-- **Contact map generation** for attention masks and graph construction
-- **Batch RMSD** for structure-aware training objectives
-- **Fused MLP operations** (Linear+GELU/SwiGLU) in transformer layers
-- **Optimized LayerNorm** for sequence normalization
-
-### Key Optimizations
-
-- **Fused operations**: Combine Linear+GELU/SwiGLU+LayerNorm to reduce kernel launches and memory traffic
-- **Memory-efficient contact maps**: Bit-packed storage reduces GPU memory usage by **8×**, allowing larger models and batch sizes
-- **Batch-friendly APIs**: Process thousands of structures in parallel without CPU-GPU synchronization overhead
-- **Mixed precision support**: Optimized for `float16` inference while maintaining `float32` accuracy where needed
-- **Scalable to large systems**: Efficient kernels handle systems from small peptides to large protein complexes
-
-### Integration Example
+Molfun handles all of this. You pick a strategy, point it at your data, and train:
 
 ```python
-# Example 1: Fused MLP for ESM/AlphaFold transformer layers
-from molfun.kernels.models import fused_linear_gelu_triton
+from molfun.models.structure import MolfunStructureModel
+from molfun.training import LoRAFinetune
 
-# Replace standard MLP with fused kernel
-hidden_states = fused_linear_gelu_triton(hidden_states, weight, bias)
+model = MolfunStructureModel("openfold", config=cfg, weights="weights.pt",
+                             head="affinity", head_config={"single_dim": 384})
 
-# Example 2: Contact map features for AlphaFold-style training
-from molfun.kernels.analysis import contact_map_atoms_bitpack
-
-# Generate contact maps for a batch of structures
-batch_contacts = []
-for coords in training_structures:
-    contacts = contact_map_atoms_bitpack(coords, cutoff=8.0)
-    batch_contacts.append(contacts)  # Efficient bit-packed format
-
-# Use in model forward pass or loss computation
+strategy = LoRAFinetune(rank=8, lr_lora=1e-4, lr_head=1e-3, ema_decay=0.999)
+history = model.fit(train_loader, val_loader, strategy=strategy, epochs=30)
 ```
+
+Beyond fine-tuning, Molfun also provides **GPU-accelerated kernels** for molecular analysis (RMSD, contact maps, distances) that are 10-800x faster than CPU tools, and an **MD analysis module** for trajectory processing.
 
 ---
 
-## Project Status
+## Core Capabilities
 
-### Analysis Kernels
-- ✅ Pairwise distance (GPU)
-- ✅ RMSD (raw, no alignment) (GPU)
-- ✅ Atomic contact map (bit-packed) (GPU)
-- ✅ Batch RMSD with superposition (Kabsch) (GPU)
-- ✅ MD trajectory analysis (contact maps, RMSD)
+### 1. Model Fine-Tuning
 
-### Model Kernels
-- ✅ GELU activation (GPU)
-- ✅ Fused Linear+GELU (GPU)
-- ✅ ESM MLP optimization (patched)
-- 🚧 SwiGLU (roadmap)
-- 🚧 LayerNorm (roadmap)
-- 🚧 Attention mechanisms (roadmap)
+The fine-tuning framework is the heart of Molfun. It is designed around **strategy classes** that encapsulate all the complexity of adapting a large pre-trained model to a downstream task.
+
+**Four strategies** cover the full spectrum from conservative to aggressive:
+
+| Strategy | Trainable Params | Best For | Key Idea |
+|----------|-----------------|----------|----------|
+| **HeadOnly** | ~50K (head only) | < 100 samples | Freeze everything, train a prediction head on top of frozen representations |
+| **LoRA** | ~600K (adapters + head) | 100 – 5K samples | Inject low-rank matrices into attention layers. 99.3% of the model stays frozen. |
+| **Partial** | ~5M (last N blocks + head) | 1K – 10K samples | Unfreeze the last N Evoformer blocks so the model can adapt its task-specific layers |
+| **Full** | ~93M (everything) | > 10K samples | Unfreeze all parameters with layer-wise LR decay to keep early layers stable |
+
+Every strategy includes **warmup scheduling**, **cosine/linear LR decay**, **EMA** (exponential moving average for stable inference on small datasets), **gradient accumulation** (to simulate large batches on a single GPU), **gradient clipping**, **mixed precision**, and **early stopping**.
+
+The model wrapper (`MolfunStructureModel`) is backend-agnostic. Today it supports OpenFold; adding ESMFold, Protenix, or any new model means implementing a single adapter class.
+
+### 2. GPU Kernels
+
+Molfun provides Triton GPU kernels for the geometric primitives that molecular ML pipelines depend on. These aren't just faster — they enable workflows that would be impractical on CPU.
+
+| Kernel | Speedup vs CPU | Notes |
+|--------|---------------|-------|
+| **Batch RMSD** (Kabsch) | 800x vs MDAnalysis, 20x vs MDTraj | Full superposition alignment |
+| **Contact Maps** (bit-packed) | 45x vs MDAnalysis, 36x vs MDTraj | 8x less memory than boolean matrices |
+| **Pairwise Distances** | GPU-native | Foundation for contact maps and graph construction |
+
+These kernels are used both in analysis workflows and as building blocks for ML feature computation (contact maps for attention masks, distance features for geometric constraints, etc.).
+
+### 3. MD Analysis
+
+The `molfun.analysis` module provides a GPU-accelerated interface for molecular dynamics trajectory analysis. It loads trajectories (DCD, XTC, etc.), transfers coordinates to GPU, and runs all analysis with Triton kernels — avoiding the CPU bottleneck that makes tools like MDAnalysis slow on large trajectories.
+
+### 4. Data Pipeline
+
+A complete data pipeline for protein fine-tuning tasks:
+
+- **PDBFetcher** — download structures from RCSB
+- **AffinityFetcher** — parse PDBbind index files or CSV datasets
+- **MSAProvider** — generate or load pre-computed MSAs (single-sequence, A3M, or MMseqs2)
+- **StructureDataset / AffinityDataset** — PyTorch datasets with on-the-fly or pre-computed features
+- **DataSplitter** — random, temporal, sequence-identity, or family-based splits (the latter two prevent data leakage from homologous sequences)
+
+---
+
+## Supported Models
+
+| Model | Status | Adapter |
+|-------|--------|---------|
+| **OpenFold** (AlphaFold2) | Fully supported | `OpenFoldAdapter` |
+| ESMFold | Planned | — |
+| Protenix | Planned | — |
+| DiffDock / ML Docking | Planned | — |
+
+Adding a new model requires implementing `BaseAdapter` (forward, freeze/unfreeze, PEFT targets) — typically ~100 lines.
 
 ---
 
 ## Architecture
 
-```mermaid
-flowchart TD
-  A[coords / trajectories] --> B[molfun.analysis API]
-  B --> C{backend}
-  C -->|GPU| D[GPU kernels]
-  C -->|CPU| E[Reference baselines]
-  D --> F[bit-packed contact maps]
-  D --> G[rmsd / distances]
-  F --> H[MD analysis: occupancy, contacts]
-  G --> I[clustering, features, scoring]
 ```
-
----
-
-## Requirements
-
-- Python **3.10+**
-- NVIDIA GPU + CUDA (tested with CUDA 12+)
-- PyTorch (CUDA build)
-
-> CPU-only reference implementations can exist, but the main value is the GPU kernels.
-
----
-
-## Installation
-
-### From source (recommended)
-
-```bash
-git clone https://github.com/<ORG>/<REPO>.git
-cd <REPO>
-pip install -e ".[dev]"
-```
-
-### Minimal install
-
-```bash
-pip install -e .
-```
-
----
-
-## Quickstart
-
-### 1) Pairwise distances (GPU)
-
-```python
-import torch
-from molfun.analysis import pairwise_distances
-
-coords = torch.randn(5000, 3, device="cuda", dtype=torch.float16)
-D = pairwise_distances(coords)  # [N, N]
-```
-
-### 2) RMSD (raw, no alignment)
-
-```python
-import torch
-from molfun.analysis import rmsd
-
-A = torch.randn(100000, 3, device="cuda", dtype=torch.float16)
-B = A + 0.01 * torch.randn_like(A)
-
-val = rmsd(A, B)               # scalar tensor on GPU
-print(val.item())
-```
-
-### 3) Contact map (bit-packed)
-
-```python
-import torch
-from molfun.analysis import contact_map_atoms_bitpack, unpack_contact_map
-
-coords = torch.randn(10000, 3, device="cuda", dtype=torch.float16)
-packed = contact_map_atoms_bitpack(coords, cutoff=8.0)  # uint8 [N, ceil(N/8)]
-
-# Debug/validation (small N only):
-dense = unpack_contact_map(packed, N=coords.shape[0])   # bool [N, N]
-```
-
----
-
-## Kernels
-
-GPU kernels live under `molfun/kernels/analysis/` and are exposed via high-level APIs in `molfun/analysis/`.
-
-### Implemented
-
-- **Pairwise distances**: compute `D[i,j] = ||r_i - r_j||`
-- **RMSD (raw)**: compute `sqrt(mean_i ||A_i - B_i||^2)`
-- **Contact map (bit-packed)**: compute contacts `dist2 < cutoff2`, packed as 1 bit per pair
-
-### Why bit-packed contact maps?
-
-A dense `N×N` contact map costs `O(N^2)` storage and bandwidth.  
-Bit-packing stores `N×ceil(N/8)` bytes (**8× smaller**), which can materially reduce GPU memory traffic.
-
-> Note: A full atomic contact map is still **O(N²)** compute. For very large systems, residue-level maps or sparse neighbor outputs are typically more practical (roadmap).
-
----
-
-## Benchmarks
-
-Benchmarks are in `bench/` and are designed to be reproducible and honest.
-
-### Benchmark methodology
-
-- GPU benchmarks include a warmup phase (to exclude one-time initialization costs).
-- GPU timing synchronizes before/after the timed block.
-- Results typically report **steady-state** runtime (and optionally first-run latency).
-
-### Example: Atomic contact map (bit-packed)
-
-> Replace with your latest validated numbers.
-
-| Case | Baseline (ms) | GPU (ms) | Speedup | Max Diff |
-|------|---------------:|---------:|--------:|---------:|
-| N=500, cutoff=8.0   | 0.0476 | 0.0294 | 1.62× | 0 |
-| N=1000, cutoff=8.0  | 0.0470 | 0.0269 | 1.75× | 0 |
-| N=2000, cutoff=8.0  | 0.0600 | 0.0279 | 2.15× | 0 |
-| N=5000, cutoff=8.0  | 0.2898 | 0.0821 | 3.53× | 0 |
-| N=10000, cutoff=8.0 | 1.6459 | 0.2732 | 6.03× | 1 |
-
-**Note on “Max Diff”:** mismatches of `1` can occur for pairs extremely close to the cutoff due to floating-point rounding. We recommend validating with:
-- mismatch count (XOR sum)
-- distance-to-cutoff statistics for mismatched pairs
-
----
-
-## Repository Layout
-
-```text
 molfun/
-  analysis/                 # high-level user-facing APIs
-  kernels/
-    analysis/               # GPU kernels for analysis primitives
-  utils/                    # helpers (packing, validation, timing)
-bench/                      # reproducible benchmarks (CPU + GPU)
-tests/                      # correctness tests
-docs/                       # documentation (optional)
+├── models/          # MolfunStructureModel — unified model wrapper
+├── adapters/        # Backend adapters (OpenFold, future: ESMFold, ...)
+├── training/        # Fine-tuning strategies (HeadOnly, LoRA, Partial, Full)
+├── peft/            # LoRA / IA3 injection (builtin + HuggingFace PEFT)
+├── heads/           # Task heads (AffinityHead, future: ClassificationHead, ...)
+├── data/            # Datasets, data sources, splits, MSA handling
+├── kernels/         # Triton GPU kernels (RMSD, contact maps, distances, ...)
+├── analysis/        # MD trajectory analysis (GPU-accelerated)
+└── api/             # FastAPI backend (dashboard integration)
+
+scripts/             # CLI tools (fine_tune.py)
+docs/                # Guides (docs/openfold/run.md)
+tests/               # Unit + GPU integration tests
+```
+
+---
+
+## Quick Start
+
+### Installation
+
+```bash
+git clone https://github.com/rubencr14/molfun.git
+cd molfun
+
+# For fine-tuning OpenFold (requires CUDA GPU):
+pip install torch --index-url https://download.pytorch.org/whl/cu124
+CC=/usr/bin/gcc-13 CXX=/usr/bin/g++-13 pip install git+https://github.com/aqlaboratory/openfold.git
+pip install dm-tree ml-collections biopython
+
+# Download pre-trained weights (~370 MB):
+mkdir -p ~/.molfun/weights
+wget -O ~/.molfun/weights/finetuning_ptm_2.pt \
+    https://huggingface.co/nz/openfold/resolve/main/finetuning_ptm_2.pt
+```
+
+### Demo Run
+
+Verify everything works with synthetic data (no external datasets needed):
+
+```bash
+PYTHONPATH=. python scripts/fine_tune.py --demo --strategy lora --epochs 3 --output runs/demo/
+```
+
+### Fine-Tune on Real Data
+
+```bash
+PYTHONPATH=. python scripts/fine_tune.py \
+    --data data/pdbbind.csv \
+    --pdbs data/pdbs/ \
+    --strategy lora \
+    --lora-rank 8 \
+    --epochs 30 \
+    --ema 0.999 \
+    --output runs/lora_pdbbind/
+```
+
+See [docs/openfold/run.md](docs/openfold/run.md) for the full production fine-tuning guide with hyperparameter recommendations, strategy selection, and deployment instructions.
+
+---
+
+## Performance
+
+### GPU Kernels
+
+Tested on NVIDIA RTX 5090, CUDA 12.8, PyTorch 2.x.
+
+**RMSD with Kabsch alignment** (2501 frames, 3891 atoms):
+
+| Method | Time | vs Molfun |
+|--------|------|-----------|
+| **Molfun (Triton)** | **0.71 ms** | — |
+| PyTorch GPU | 2.21 ms | 3.1x slower |
+| MDTraj (C/Cython) | 14.69 ms | 21x slower |
+| MDAnalysis | 565.98 ms | 800x slower |
+
+**Contact Maps** (2501 frames, 254 Cα atoms, 8.0 Å cutoff):
+
+| Method | Time | vs Molfun |
+|--------|------|-----------|
+| **Molfun (Triton)** | **66 ms** | — |
+| PyTorch GPU | 71 ms | 1.1x slower |
+| MDTraj | 2,432 ms | 37x slower |
+| MDAnalysis | 3,163 ms | 48x slower |
+
+### Fine-Tuning
+
+All four strategies verified with gradient flow tests on real OpenFold (93M params) with pre-trained weights. LoRA fine-tuning of OpenFold takes ~5 seconds per epoch on synthetic data (seq_len=32) on a single GPU.
+
+---
+
+## Tests
+
+```bash
+# Full test suite (111 tests: data pipeline, kernels, models, training strategies)
+python -m pytest tests/ -v
+
+# Just the fine-tuning tests (mock + real GPU)
+python -m pytest tests/training/ tests/models/ -v
 ```
 
 ---
 
 ## Roadmap
 
-### Near-term (high leverage)
+**Fine-Tuning**
+- [ ] ESMFold adapter
+- [ ] Classification head (protein family, function prediction)
+- [ ] Multi-task heads (affinity + contact prediction jointly)
+- [ ] Distributed training (DDP / FSDP)
 
-- [ ] Batch RMSD (raw): `traj [M,N,3]` vs `ref [N,3]` → `rmsd [M]`
-- [ ] Contact occupancy: accumulate contacts over frames (bit-packed counts)
-- [ ] Residue-level contact maps (Cα / centroid) for large systems
+**Models**
+- [ ] Protenix adapter
+- [ ] ML docking model adapters (DiffDock, etc.)
 
-### Mid-term
+**Kernels**
+- [ ] Fused SwiGLU / LayerNorm for transformer layers
+- [ ] Sparse neighbor / edge list generation
+- [ ] Residue-level contact maps for large systems
 
-- [ ] Aligned RMSD (Kabsch) batch pipeline:
-  - centroids (GPU)
-  - covariance matrices (GPU)
-  - small 3×3 solve (initially via high-level linear algebra on GPU)
-- [ ] Sparse neighbor / edge list generation (cutoff-based)
-
-### Long-term
-
-- [ ] Additional geometry primitives for ML features (edges, radial bases, etc.)
-- [ ] MD-adjacent kernels (careful scope)
-
----
-
-## Correctness & Testing
-
-We prioritize correctness first, then performance.
-
-- Unit tests compare GPU outputs against reference implementations (Torch/NumPy)
-- For bit-packed outputs, validation can be performed via:
-  - unpack + XOR mismatch count (small N)
-  - bit population counts vs baseline (larger N)
-
-Run tests:
-
-```bash
-pytest -q
-```
-
-Run benchmarks:
-
-```bash
-python -m bench.run_all
-```
-
----
-
-## Contributing
-
-Contributions are welcome—especially:
-- performance improvements with clear benchmarks
-- new analysis primitives with robust tests
-- documentation & examples
-
-### Contribution standards
-
-- Include a correctness test (`tests/`)
-- Include a benchmark or microbenchmark (`bench/`) for performance-related changes
-- Follow formatting/linting (ruff)
-
----
-
-## Reproducibility Notes
-
-GPU performance depends on:
-- GPU architecture (SM count, memory bandwidth, cache)
-- CUDA / driver versions
-- dtype (fp16/fp32)
-- problem sizes (N, M)
-
-We recommend reporting:
-- GPU model + driver
-- CUDA version
-- PyTorch version
-- dtype and shapes
+**Data**
+- [ ] Automated PDBbind download + preprocessing
+- [ ] OpenFold feature pre-computation pipeline
+- [ ] MSA generation via ColabFold/MMseqs2 integration
 
 ---
 
 ## License
 
-MIT — see [`LICENSE`](./LICENSE).
-
----
+MIT — see [LICENSE](./LICENSE).
 
 ## Citation
 
-If you use Molfun in academic work, please cite:
-
 ```bibtex
 @software{molfun,
-  title  = {Molfun: GPU Kernels for Molecular Modeling},
+  title  = {Molfun: Fine-Tuning & GPU Acceleration for Molecular ML},
   author = {Rubén Cañadas},
   year   = {2026},
   url    = {https://github.com/rubencr14/molfun/}
 }
 ```
-
----
-
-## Acknowledgments
-
-Inspired by the idea that domain-specific performance primitives can unlock major workflow improvements when applied to scientific computing.
