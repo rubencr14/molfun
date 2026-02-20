@@ -244,11 +244,19 @@ class OpenFoldFeaturizer:
             dtype=np.int64,
         )
 
+        aatype_t = torch.tensor(aatype, dtype=torch.long)
+
+        # target_feat: one-hot of aatype over 22 classes (20 AAs + unk + gap)
+        # Required by OpenFold's InputEmbedder
+        import torch.nn.functional as F
+        target_feat = F.one_hot(aatype_t.clamp(max=21), num_classes=22).float()
+
         protein = {
-            "aatype": torch.tensor(aatype, dtype=torch.long),
+            "aatype": aatype_t,
             "residue_index": torch.arange(L, dtype=torch.long),
             "all_atom_positions": torch.tensor(atom_pos, dtype=torch.float32),
             "all_atom_mask": torch.tensor(atom_mask, dtype=torch.float32),
+            "target_feat": target_feat,  # [L, 22] — required by OpenFold
         }
         return protein
 
@@ -393,28 +401,14 @@ class OpenFoldFeaturizer:
     @staticmethod
     def _add_recycling_dim(protein: dict) -> dict:
         """
-        OpenFold expects most sequence / residue-level tensors to have a
-        trailing recycling dimension R=1: [..., R].
-        Only add it to tensors with shape starting with L.
+        Add a trailing recycling dimension R=1 to every tensor in the dict.
+
+        OpenFold's recycling loop uses ``batch[k][..., cycle_no]`` to extract
+        features for each recycling iteration, so ALL tensors must carry this
+        trailing dimension (including MSA and template tensors).
         """
-        # Tensors that should NOT get the recycling dim (template tensors
-        # already have their own T dim, global scalars, etc.)
-        skip = {
-            "seq_length", "seq_mask",
-            # template tensors already 4D+
-            "template_aatype", "template_all_atom_positions",
-            "template_all_atom_mask", "template_mask",
-            "template_pseudo_beta", "template_pseudo_beta_mask",
-            "template_torsion_angles_sin_cos",
-            "template_alt_torsion_angles_sin_cos",
-            "template_torsion_angles_mask",
-            "template_sum_probs",
-            # MSA tensors have [N, L] — don't add recycling dim
-            "msa", "deletion_matrix", "msa_mask", "msa_feat",
-            "extra_msa", "extra_msa_deletion_value", "extra_msa_mask",
-            "extra_has_deletion", "extra_deletion_value",
-            "bert_mask", "true_msa",
-        }
+        # Only truly scalar/non-tensor fields skip this
+        skip = {"seq_length"}
         out = {}
         for k, v in protein.items():
             if k in skip or not isinstance(v, torch.Tensor):
