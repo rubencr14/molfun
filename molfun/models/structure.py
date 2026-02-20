@@ -203,6 +203,10 @@ class MolfunStructureModel:
         n = 0
         for batch_data in loader:
             batch, targets, mask = self._unpack_batch(batch_data)
+            batch = _to_device(batch, self.device)
+            targets = targets.to(self.device)
+            if mask is not None:
+                mask = mask.to(self.device)
             optimizer.zero_grad()
             with torch.amp.autocast("cuda", enabled=amp):
                 result = self.forward(batch, mask=mask)
@@ -229,6 +233,10 @@ class MolfunStructureModel:
         n = 0
         for batch_data in loader:
             batch, targets, mask = self._unpack_batch(batch_data)
+            batch = _to_device(batch, self.device)
+            targets = targets.to(self.device)
+            if mask is not None:
+                mask = mask.to(self.device)
             result = self.forward(batch, mask=mask)
             losses = self.head.loss(result["preds"], targets, loss_fn=loss_fn)
             total_loss += losses["affinity_loss"].item()
@@ -309,3 +317,10 @@ class MolfunStructureModel:
     @staticmethod
     def available_heads() -> list[str]:
         return list(HEAD_REGISTRY.keys())
+
+
+def _to_device(batch: dict, device: str) -> dict:
+    return {
+        k: v.to(device) if isinstance(v, torch.Tensor) else v
+        for k, v in batch.items()
+    }

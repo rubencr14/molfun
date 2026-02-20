@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from typing import Optional
+import re
 import torch
 import torch.nn as nn
 
@@ -62,6 +63,7 @@ class OpenFoldAdapter(BaseAdapter):
         model = AlphaFold(config)
         if weights_path:
             state = torch.load(weights_path, map_location="cpu", weights_only=True)
+            state = _remap_openfold_keys(state, model)
             model.load_state_dict(state, strict=False)
         return model
 
@@ -139,6 +141,17 @@ class OpenFoldAdapter(BaseAdapter):
     # ------------------------------------------------------------------
     # Freeze / unfreeze
     # ------------------------------------------------------------------
+    def train(self, mode: bool = True):
+        """
+        OpenFold must remain in eval mode because both EvoformerStack._prep_blocks
+        and TemplatePairStack.forward assert `not self.training` (chunked ops are
+        inference-only). Gradients still flow through LoRA / unfrozen params via
+        `requires_grad=True` and `torch.set_grad_enabled(True)`.
+        """
+        super().train(mode)
+        self.model.eval()
+        return self
+
     def freeze_trunk(self) -> None:
         """Freeze all model parameters (prep for PEFT or head-only training)."""
         for p in self.model.parameters():
@@ -173,3 +186,31 @@ class OpenFoldAdapter(BaseAdapter):
         total = sum(p.numel() for p in self.model.parameters())
         trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         return {"total": total, "trainable": trainable, "frozen": total - trainable}
+
+
+def _remap_openfold_keys(state: dict, model: nn.Module) -> dict:
+    """
+    Remap checkpoint keys to match current OpenFold model structure.
+    Handles naming changes between OpenFold versions (e.g. .core. prefix,
+    IPA linear wrapping, template embedder nesting).
+    """
+    model_keys = set(model.state_dict().keys())
+    fixed = {}
+
+    for k, v in state.items():
+        if k in model_keys:
+            fixed[k] = v
+            continue
+
+        new_k = k
+        new_k = re.sub(r"(blocks\.\d+)\.core\.(pair_transition|tri_mul_|tri_att_)",
+                        r"\1.pair_stack.\2", new_k)
+        new_k = re.sub(r"(blocks\.\d+)\.core\.", r"\1.", new_k)
+        new_k = re.sub(r"(ipa\.linear_\w+_points)\.(weight|bias)",
+                        r"\1.linear.\2", new_k)
+        new_k = re.sub(r"^(template_(?:pair_embedder|pair_stack|angle_embedder|pointwise_att))",
+                        r"template_embedder.\1", new_k)
+
+        fixed[new_k] = v
+
+    return fixed

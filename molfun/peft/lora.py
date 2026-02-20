@@ -220,7 +220,7 @@ class MolfunPEFT:
                     dropout=self.config["dropout"],
                 )
                 parent_module._modules[attr_name] = lora_layer
-                self._builtin_layers.append((parent_module, attr_name, lora_layer))
+                self._builtin_layers.append((parent_module, full_name, lora_layer))
 
         return model
 
@@ -267,9 +267,9 @@ class MolfunPEFT:
             self._peft_model.save_pretrained(path)
         else:
             state = {}
-            for _, attr_name, layer in self._builtin_layers:
-                state[f"{attr_name}.lora_A"] = layer.lora_A.data.cpu()
-                state[f"{attr_name}.lora_B"] = layer.lora_B.data.cpu()
+            for _, full_name, layer in self._builtin_layers:
+                state[f"{full_name}.lora_A"] = layer.lora_A.data.cpu()
+                state[f"{full_name}.lora_B"] = layer.lora_B.data.cpu()
             torch.save(state, path)
 
     def load(self, path: str) -> None:
@@ -279,9 +279,9 @@ class MolfunPEFT:
             self._peft_model.load_adapter(path, adapter_name="default")
         else:
             state = torch.load(path, map_location="cpu", weights_only=True)
-            for _, attr_name, layer in self._builtin_layers:
-                layer.lora_A.data = state[f"{attr_name}.lora_A"].to(layer.lora_A.device)
-                layer.lora_B.data = state[f"{attr_name}.lora_B"].to(layer.lora_B.device)
+            for _, full_name, layer in self._builtin_layers:
+                layer.lora_A.data = state[f"{full_name}.lora_A"].to(layer.lora_A.device)
+                layer.lora_B.data = state[f"{full_name}.lora_B"].to(layer.lora_B.device)
 
     # ------------------------------------------------------------------
     # Info
