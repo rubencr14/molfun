@@ -1,5 +1,7 @@
 # Molfun — Fine-Tuning & GPU Acceleration for Molecular ML
 
+![Molfun Banner](./docs/banner.png)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](#installation)
 [![CUDA](https://img.shields.io/badge/CUDA-12%2B-green.svg)](#requirements)
