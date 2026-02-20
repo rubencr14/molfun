@@ -30,6 +30,7 @@ from torch.utils.data import DataLoader
 from molfun.adapters.base import BaseAdapter
 from molfun.peft.lora import MolfunPEFT
 from molfun.heads.affinity import AffinityHead
+from molfun.heads.structure import StructureLossHead
 from molfun.core.types import TrunkOutput
 
 if TYPE_CHECKING:
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
 ADAPTER_REGISTRY: dict[str, type[BaseAdapter]] = {}
 HEAD_REGISTRY: dict[str, type[nn.Module]] = {
     "affinity": AffinityHead,
+    "structure": StructureLossHead,
 }
 
 
@@ -121,11 +123,12 @@ class MolfunStructureModel:
         Full forward: adapter → head.
 
         Returns dict with "trunk_output" and optionally "preds".
+        For StructureLossHead, "preds" is the scalar structure loss.
         """
         trunk_output = self.adapter(batch)
         result = {"trunk_output": trunk_output}
         if self.head is not None:
-            result["preds"] = self.head(trunk_output, mask=mask)
+            result["preds"] = self.head(trunk_output, mask=mask, batch=batch)
         return result
 
     # ------------------------------------------------------------------
@@ -159,7 +162,7 @@ class MolfunStructureModel:
             )
         if self.head is None:
             raise RuntimeError(
-                "No head configured. Pass head='affinity' to enable training."
+                "No head configured. Pass head='affinity' or head='structure'."
             )
         return self._strategy.fit(self, train_loader, val_loader, epochs)
 

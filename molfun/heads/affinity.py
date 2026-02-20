@@ -86,6 +86,7 @@ class AffinityHead(nn.Module):
         self,
         trunk_output: TrunkOutput,
         mask: Optional[torch.Tensor] = None,
+        batch: Optional[dict] = None,
     ) -> torch.Tensor:
         """
         Args:

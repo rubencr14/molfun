@@ -102,6 +102,8 @@ class OpenFoldAdapter(BaseAdapter):
                 "msa": outputs.get("msa"),
                 "sm": outputs.get("sm"),
                 "num_recycles": outputs.get("num_recycles"),
+                # Full output dict required by StructureLossHead / AlphaFoldLoss
+                "_raw_outputs": outputs,
             },
         )
 

@@ -24,4 +24,10 @@ class HeadOnlyFinetune(FinetuneStrategy):
     def param_groups(self, model) -> list[dict]:
         if model.head is None:
             raise RuntimeError("No head attached to model.")
-        return [{"params": list(model.head.parameters()), "lr": self.lr}]
+        params = list(model.head.parameters())
+        if not params:
+            raise RuntimeError(
+                "HeadOnlyFinetune requires a head with trainable parameters. "
+                "For structure fine-tuning use PartialFinetune or LoRAFinetune."
+            )
+        return [{"params": params, "lr": self.lr}]

@@ -72,7 +72,13 @@ class PartialFinetune(FinetuneStrategy):
         groups = []
         if trunk_params:
             groups.append({"params": trunk_params, "lr": self.lr_trunk})
-        groups.append({"params": head_params, "lr": self.lr_head})
+        if head_params:
+            groups.append({"params": head_params, "lr": self.lr_head})
+        if not groups:
+            raise RuntimeError(
+                "No trainable parameters found. "
+                "Increase unfreeze_last_n or use FullFinetune."
+            )
         return groups
 
     def describe(self) -> dict:

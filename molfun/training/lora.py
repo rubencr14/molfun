@@ -67,10 +67,14 @@ class LoRAFinetune(HeadOnlyFinetune):
             raise RuntimeError("No head attached to model.")
         if model._peft is None:
             raise RuntimeError("PEFT not configured — setup() was not called.")
-        return [
-            {"params": list(model.head.parameters()), "lr": self.lr_head},
-            {"params": model._peft.trainable_parameters(), "lr": self.lr_lora},
-        ]
+        groups = []
+        head_params = list(model.head.parameters())
+        if head_params:
+            groups.append({"params": head_params, "lr": self.lr_head})
+        groups.append(
+            {"params": model._peft.trainable_parameters(), "lr": self.lr_lora}
+        )
+        return groups
 
     def describe(self) -> dict:
         d = super().describe()

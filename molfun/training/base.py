@@ -253,14 +253,15 @@ class FinetuneStrategy(ABC):
         for i, batch_data in enumerate(loader):
             batch, targets, mask = _unpack_batch(batch_data)
             batch = _to_device(batch, model.device)
-            targets = targets.to(model.device)
+            if targets is not None:
+                targets = targets.to(model.device)
             if mask is not None:
                 mask = mask.to(model.device)
 
             with torch.amp.autocast("cuda", enabled=self.amp):
                 result = model.forward(batch, mask=mask)
                 losses = model.head.loss(result["preds"], targets, loss_fn=self.loss_fn)
-                loss = losses["affinity_loss"] / self.accumulation_steps
+                loss = next(iter(losses.values())) / self.accumulation_steps
 
             scaler.scale(loss).backward()
             total_loss += loss.item() * self.accumulation_steps
@@ -296,12 +297,13 @@ class FinetuneStrategy(ABC):
         for batch_data in loader:
             batch, targets, mask = _unpack_batch(batch_data)
             batch = _to_device(batch, model.device)
-            targets = targets.to(model.device)
+            if targets is not None:
+                targets = targets.to(model.device)
             if mask is not None:
                 mask = mask.to(model.device)
             result = model.forward(batch, mask=mask)
             losses = model.head.loss(result["preds"], targets, loss_fn=self.loss_fn)
-            total_loss += losses["affinity_loss"].item()
+            total_loss += next(iter(losses.values())).item()
             n += 1
 
         if use_ema:
@@ -350,9 +352,10 @@ def _unpack_batch(batch_data):
     Normalize batch from DataLoader into (features, targets, mask).
 
     Supports:
-    - (features_dict, targets) or (features_dict, targets, mask)
+    - (features_dict, targets) or (features_dict, targets, mask)  — affinity
     - (features_tensor, targets) from TensorDataset
     - dict with "labels" key
+    - dict without "labels" key (structure fine-tuning: targets = None)
     """
     if isinstance(batch_data, (list, tuple)):
         if len(batch_data) == 3:
@@ -364,8 +367,15 @@ def _unpack_batch(batch_data):
             mask = None
         return features, targets, mask
     if isinstance(batch_data, dict):
-        targets = batch_data.pop("labels")
-        mask = batch_data.get("all_atom_mask") or batch_data.get("mask")
+        if "labels" in batch_data:
+            targets = batch_data.pop("labels")
+        else:
+            # Structure fine-tuning: batch IS the feature+GT dict, no targets
+            targets = None
+        # Use .get() but avoid Python's `or` which would call tensor.__bool__
+        mask = batch_data.get("all_atom_mask")
+        if mask is None:
+            mask = batch_data.get("mask")
         return batch_data, targets, mask
     raise ValueError(f"Unsupported batch format: {type(batch_data)}")
 
