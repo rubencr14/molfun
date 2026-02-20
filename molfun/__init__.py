@@ -1,7 +1,7 @@
 """
-Molfun - Optimized Biological Language Models with Triton Kernels
+Molfun — GPU Kernels for Molecular Modeling
 """
 
-from molfun.models import BioLanguageModel
+from molfun.models.openfold import OpenFold
 
-__all__ = ["BioLanguageModel"]
+__all__ = ["OpenFold"]
