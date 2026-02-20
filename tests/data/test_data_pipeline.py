@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 
 from molfun.data.sources.pdb import PDBFetcher
 from molfun.data.sources.affinity import AffinityFetcher, AffinityRecord
+from molfun.data.sources.msa import MSAProvider
 from molfun.data.datasets.structure import StructureDataset, collate_structure_batch
 from molfun.data.datasets.affinity import AffinityDataset
 from molfun.data.splits import DataSplitter
@@ -272,3 +273,135 @@ class TestDataSplitter:
         assert set(train.indices) == {0, 1}
         assert set(val.indices) == {2, 3}
         assert set(test.indices) == {4, 5}
+
+
+# ── MSAProvider ───────────────────────────────────────────────────────
+
+SAMPLE_A3M = """\
+>query
+AGVMK
+>hit1
+AG-MK
+>hit2
+aAGVmMK
+>hit3
+XGVMK
+"""
+
+
+class TestMSAProvider:
+
+    def test_single_sequence_backend(self, tmp_path):
+        msa = MSAProvider("single", msa_dir=str(tmp_path))
+        feats = msa.get("AGVMK", "test1")
+        assert feats["msa"].shape == (1, 5)
+        assert feats["deletion_matrix"].shape == (1, 5)
+        assert feats["msa_mask"].shape == (1, 5)
+        assert feats["msa_mask"].sum() == 5
+
+    def test_single_sequence_values(self, tmp_path):
+        msa = MSAProvider("single", msa_dir=str(tmp_path))
+        feats = msa.get("AG", "test2")
+        assert feats["msa"][0, 0].item() == 0   # A
+        assert feats["msa"][0, 1].item() == 7   # G
+
+    def test_precomputed_a3m(self, tmp_path):
+        (tmp_path / "test3.a3m").write_text(SAMPLE_A3M)
+        msa = MSAProvider("precomputed", msa_dir=str(tmp_path))
+        feats = msa.get("AGVMK", "test3")
+        assert feats["msa"].shape[0] == 4  # query + 3 hits
+        assert feats["msa"].shape[1] == 5  # query length
+        assert feats["msa_mask"].shape == feats["msa"].shape
+
+    def test_a3m_deletions_counted(self, tmp_path):
+        (tmp_path / "test4.a3m").write_text(SAMPLE_A3M)
+        msa = MSAProvider("precomputed", msa_dir=str(tmp_path))
+        feats = msa.get("AGVMK", "test4")
+        # hit2 = "aAGVmMK" → lowercase 'a' before A → del=1 at pos 0
+        #                   → lowercase 'm' before M → del=1 at pos 3
+        assert feats["deletion_matrix"][2, 0].item() == 1.0
+        assert feats["deletion_matrix"][2, 3].item() == 1.0
+
+    def test_a3m_gap_mask(self, tmp_path):
+        (tmp_path / "test5.a3m").write_text(SAMPLE_A3M)
+        msa = MSAProvider("precomputed", msa_dir=str(tmp_path))
+        feats = msa.get("AGVMK", "test5")
+        # hit1 = "AG-MK" → gap at position 2, msa_mask should be 0 there
+        assert feats["msa_mask"][1, 2].item() == 0.0
+        assert feats["msa_mask"][1, 0].item() == 1.0
+
+    def test_cache_saves_and_loads(self, tmp_path):
+        msa = MSAProvider("single", msa_dir=str(tmp_path))
+        feats1 = msa.get("AGVMK", "cached1")
+        # Save happens internally, now load from cache
+        cache_file = tmp_path / "cached1.msa.pt"
+        assert not cache_file.exists()  # single backend doesn't cache
+
+        # Precomputed does cache after first load
+        (tmp_path / "cached2.a3m").write_text(SAMPLE_A3M)
+        msa2 = MSAProvider("precomputed", msa_dir=str(tmp_path))
+        feats2 = msa2.get("AGVMK", "cached2")
+        assert (tmp_path / "cached2.msa.pt").exists()
+
+        # Second call should use cache
+        feats3 = msa2.get("AGVMK", "cached2")
+        assert torch.equal(feats2["msa"], feats3["msa"])
+
+    def test_precomputed_missing_raises(self, tmp_path):
+        msa = MSAProvider("precomputed", msa_dir=str(tmp_path))
+        with pytest.raises(FileNotFoundError, match="No A3M file"):
+            msa.get("AGVMK", "nonexistent")
+
+    def test_invalid_backend_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="Unknown backend"):
+            MSAProvider("wrong", msa_dir=str(tmp_path))
+
+    def test_max_msa_depth(self, tmp_path):
+        (tmp_path / "deep.a3m").write_text(SAMPLE_A3M)
+        msa = MSAProvider("precomputed", msa_dir=str(tmp_path), max_msa_depth=2)
+        feats = msa.get("AGVMK", "deep")
+        assert feats["msa"].shape[0] == 2  # only query + 1 hit
+
+    def test_gzipped_a3m(self, tmp_path):
+        import gzip
+        with gzip.open(tmp_path / "gz1.a3m.gz", "wt") as f:
+            f.write(SAMPLE_A3M)
+        msa = MSAProvider("precomputed", msa_dir=str(tmp_path))
+        feats = msa.get("AGVMK", "gz1")
+        assert feats["msa"].shape[0] == 4
+
+
+# ── MSA + StructureDataset integration ───────────────────────────────
+
+class TestMSAIntegration:
+
+    def test_dataset_with_single_msa(self, pdb_dir, tmp_path):
+        msa = MSAProvider("single", msa_dir=str(tmp_path))
+        paths = [pdb_dir / "1abc.pdb"]
+        ds = StructureDataset(pdb_paths=paths, msa_provider=msa)
+        feat, _ = ds[0]
+        assert "msa" in feat
+        assert "deletion_matrix" in feat
+        assert "msa_mask" in feat
+        assert feat["msa"].shape[1] == len(feat["sequence"])
+
+    def test_dataset_without_msa(self, pdb_dir):
+        paths = [pdb_dir / "1abc.pdb"]
+        ds = StructureDataset(pdb_paths=paths)
+        feat, _ = ds[0]
+        assert "msa" not in feat
+
+    def test_collate_with_msa(self, pdb_dir, tmp_path):
+        msa = MSAProvider("single", msa_dir=str(tmp_path))
+        paths = list(pdb_dir.glob("*.pdb"))
+        ds = StructureDataset(
+            pdb_paths=paths,
+            labels={"1abc": 6.5, "2xyz": 7.2, "3def": 5.8},
+            msa_provider=msa,
+        )
+        loader = DataLoader(ds, batch_size=2, collate_fn=collate_structure_batch)
+        batch_feat, batch_labels = next(iter(loader))
+        assert "msa" in batch_feat
+        assert batch_feat["msa"].shape[0] == 2       # batch dim
+        assert batch_feat["msa"].dim() == 3           # [B, N, L]
+        assert batch_feat["msa_mask"].shape == batch_feat["msa"].shape

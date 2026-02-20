@@ -60,6 +60,7 @@ class StructureDataset(Dataset):
         pdb_paths: list[str | Path],
         labels: Optional[dict[str, float]] = None,
         features_dir: Optional[str | Path] = None,
+        msa_provider=None,
         max_seq_len: int = 512,
         transform: Optional[Callable] = None,
     ):
@@ -70,12 +71,15 @@ class StructureDataset(Dataset):
             features_dir: Directory with pre-computed .pkl feature files.
                           If a .pkl exists for a PDB ID, it is loaded instead
                           of parsing the structure file.
+            msa_provider: Optional MSAProvider instance. When set, MSA features
+                          are generated for entries that don't already have them.
             max_seq_len: Crop sequences longer than this.
             transform: Optional transform applied to the feature dict.
         """
         self.paths = [Path(p) for p in pdb_paths]
         self.labels = labels or {}
         self.features_dir = Path(features_dir) if features_dir else None
+        self.msa_provider = msa_provider
         self.max_seq_len = max_seq_len
         self.transform = transform
 
@@ -122,7 +126,13 @@ class StructureDataset(Dataset):
             if pkl_path.exists():
                 return self._load_pickle(pkl_path)
 
-        return self._parse_structure(self.paths[idx])
+        features = self._parse_structure(self.paths[idx])
+
+        if "msa" not in features and self.msa_provider is not None:
+            msa_feats = self.msa_provider.get(features["sequence"], pdb_id)
+            features.update(msa_feats)
+
+        return features
 
     @staticmethod
     def _load_pickle(path: Path) -> dict:
@@ -244,6 +254,8 @@ def collate_structure_batch(batch: list[tuple[dict, torch.Tensor]]) -> tuple[dic
     """
     Custom collate function that pads variable-length structures.
 
+    Handles optional MSA features if present.
+
     Returns:
         (features_dict, labels) where features_dict has batched tensors.
     """
@@ -265,10 +277,29 @@ def collate_structure_batch(batch: list[tuple[dict, torch.Tensor]]) -> tuple[dic
         residue_index[i, :L] = feat["residue_index"]
         sequences.append(feat["sequence"])
 
-    return {
+    result = {
         "sequences": sequences,
         "all_atom_positions": positions,
         "all_atom_mask": mask,
         "residue_index": residue_index,
         "seq_length": torch.tensor([f["seq_length"].item() for f in features_list]),
-    }, labels
+    }
+
+    # Batch MSA features if present
+    if "msa" in features_list[0]:
+        max_msa_depth = max(f["msa"].shape[0] for f in features_list)
+        msa_batch = torch.zeros(B, max_msa_depth, max_len, dtype=torch.long)
+        del_batch = torch.zeros(B, max_msa_depth, max_len)
+        msa_mask_batch = torch.zeros(B, max_msa_depth, max_len)
+
+        for i, feat in enumerate(features_list):
+            N, L = feat["msa"].shape
+            msa_batch[i, :N, :L] = feat["msa"]
+            del_batch[i, :N, :L] = feat["deletion_matrix"]
+            msa_mask_batch[i, :N, :L] = feat["msa_mask"]
+
+        result["msa"] = msa_batch
+        result["deletion_matrix"] = del_batch
+        result["msa_mask"] = msa_mask_batch
+
+    return result, labels

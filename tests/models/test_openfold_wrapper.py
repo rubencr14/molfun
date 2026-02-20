@@ -1,5 +1,5 @@
 """
-End-to-end test for the OpenFold wrapper: adapter → PEFT → head → train loop.
+End-to-end test for structure models: adapter → PEFT → head → train loop.
 Uses a mock model so OpenFold installation is not required.
 """
 
@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
+from molfun.models.structure import MolfunStructureModel
 from molfun.models.openfold import OpenFold
 from molfun.adapters.openfold import OpenFoldAdapter
 from molfun.peft.lora import MolfunPEFT, LoRALinear
@@ -243,6 +244,95 @@ class TestAffinityHeadStandalone:
         losses = head.loss(preds, targets)
         assert "affinity_loss" in losses
         assert losses["affinity_loss"].requires_grad
+
+
+# ── MolfunStructureModel (unified API) ────────────────────────────────
+
+class TestMolfunStructureModel:
+
+    def _make(self, **kw) -> MolfunStructureModel:
+        mock = _MockOpenFold(DIM)
+        defaults = dict(name="openfold", model=mock, device=DEVICE)
+        defaults.update(kw)
+        return MolfunStructureModel(**defaults)
+
+    def test_predict(self):
+        m = self._make()
+        out = m.predict({})
+        assert isinstance(out, TrunkOutput)
+
+    def test_fine_tune_lora(self):
+        m = self._make(
+            fine_tune=True,
+            peft="lora",
+            peft_config={"rank": 4, "target_modules": ["linear_q", "linear_v"], "use_hf": False},
+            head="affinity",
+            head_config={"single_dim": DIM, "hidden_dim": 32},
+        )
+        info = m.summary()
+        assert info["name"] == "openfold"
+        assert info["peft"]["method"] == "lora"
+        assert info["head"]["type"] == "AffinityHead"
+
+    def test_fit(self):
+        m = self._make(
+            fine_tune=True,
+            peft="lora",
+            peft_config={"rank": 4, "target_modules": ["linear_q", "linear_v"], "use_hf": False},
+            head="affinity",
+            head_config={"single_dim": DIM, "hidden_dim": 32},
+        )
+        dataset = list(zip([{} for _ in range(4)], torch.randn(4, 1, device=DEVICE)))
+        loader = DataLoader(dataset, batch_size=2, collate_fn=_collate_fn)
+        history = m.fit(loader, epochs=1, lr=1e-3, amp=False)
+        assert len(history) == 1
+
+    def test_save_load(self, tmp_path):
+        m = self._make(
+            fine_tune=True,
+            peft="lora",
+            peft_config={"rank": 4, "target_modules": ["linear_q"], "use_hf": False},
+            head="affinity",
+            head_config={"single_dim": DIM, "hidden_dim": 32},
+        )
+        m.save(str(tmp_path / "ckpt"))
+        assert (tmp_path / "ckpt" / "meta.pt").exists()
+        assert (tmp_path / "ckpt" / "head.pt").exists()
+
+        m2 = self._make(
+            fine_tune=True,
+            peft="lora",
+            peft_config={"rank": 4, "target_modules": ["linear_q"], "use_hf": False},
+            head="affinity",
+            head_config={"single_dim": DIM, "hidden_dim": 32},
+        )
+        m2.load(str(tmp_path / "ckpt"))
+
+    def test_unknown_model_raises(self):
+        with pytest.raises(ValueError, match="Unknown model"):
+            MolfunStructureModel("nonexistent", config={})
+
+    def test_unknown_head_raises(self):
+        mock = _MockOpenFold(DIM)
+        with pytest.raises(ValueError, match="Unknown head"):
+            MolfunStructureModel("openfold", model=mock, device=DEVICE, fine_tune=True, head="bad")
+
+    def test_unknown_peft_raises(self):
+        mock = _MockOpenFold(DIM)
+        with pytest.raises(ValueError, match="Unknown PEFT"):
+            MolfunStructureModel("openfold", model=mock, device=DEVICE, fine_tune=True, peft="bad")
+
+    def test_available_models(self):
+        models = MolfunStructureModel.available_models()
+        assert "openfold" in models
+
+    def test_available_heads(self):
+        heads = MolfunStructureModel.available_heads()
+        assert "affinity" in heads
+
+    def test_openfold_alias_is_subclass(self):
+        m = OpenFold(model=_MockOpenFold(DIM), device=DEVICE)
+        assert isinstance(m, MolfunStructureModel)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────

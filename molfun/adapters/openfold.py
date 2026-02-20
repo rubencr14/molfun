@@ -5,16 +5,17 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
+from molfun.adapters.base import BaseAdapter
 from molfun.core.types import TrunkOutput
 
 
-class OpenFoldAdapter(nn.Module):
+class OpenFoldAdapter(BaseAdapter):
     """
     Wraps an OpenFold AlphaFold model behind a normalized API.
     
     Exposes:
     - forward() → TrunkOutput with single/pair representations and structure
-    - get_targetable_modules() → dict of named modules for PEFT injection
+    - peft_target_module → evoformer (for PEFT injection)
     - freeze_trunk() / unfreeze_trunk() for fine-tuning control
     """
 
@@ -147,6 +148,11 @@ class OpenFoldAdapter(nn.Module):
         """Unfreeze all model parameters."""
         for p in self.model.parameters():
             p.requires_grad = True
+
+    @property
+    def peft_target_module(self) -> nn.Module:
+        """Evoformer stack — where PEFT layers are injected."""
+        return self.model.evoformer
 
     def freeze_except(self, *module_keys: str) -> None:
         """Freeze everything except the named modules."""
