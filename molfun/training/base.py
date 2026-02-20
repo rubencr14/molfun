@@ -143,6 +143,7 @@ class FinetuneStrategy(ABC):
         if self._setup_done:
             return
         self._setup_impl(model)
+        model._strategy = self
         self._setup_done = True
 
     @abstractmethod
