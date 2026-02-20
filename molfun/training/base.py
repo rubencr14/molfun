@@ -171,6 +171,7 @@ class FinetuneStrategy(ABC):
         train_loader: DataLoader,
         val_loader: Optional[DataLoader] = None,
         epochs: int = 10,
+        verbose: bool = True,
     ) -> list[dict]:
         """
         Run the full training loop.
@@ -237,7 +238,17 @@ class FinetuneStrategy(ABC):
 
             history.append(metrics)
 
+            if verbose:
+                val_str = f"{metrics['val_loss']:.4f}" if "val_loss" in metrics else "   —  "
+                print(
+                    f"  Epoch {epoch+1:>3}/{epochs}  "
+                    f"train={train_loss:.4f}  val={val_str}  "
+                    f"lr={metrics['lr']:.2e}",
+                    flush=True,
+                )
+
             if self.patience > 0 and patience_counter >= self.patience:
+                print(f"  Early stopping at epoch {epoch+1}")
                 break
 
         return history
