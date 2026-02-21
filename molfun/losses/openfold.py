@@ -1,0 +1,261 @@
+"""
+OpenFold structure loss.
+
+Wraps OpenFold's AlphaFoldLoss so it fits the LossFunction interface.
+All batch pre-processing helpers live here so StructureLossHead stays thin.
+
+Usage
+-----
+from molfun.losses.openfold import OpenFoldLoss
+
+# Full composite loss (FAPE + chi + distogram + pLDDT):
+loss_fn = OpenFoldLoss(config.loss)
+
+# Only FAPE + supervised chi:
+loss_fn = OpenFoldLoss.fape_only(config)
+
+# Custom per-term weights:
+loss_fn = OpenFoldLoss.with_weights(config, fape=1.0, masked_msa=0.0)
+
+# Compute:
+scalar = loss_fn(raw_openfold_outputs, batch=feature_dict)
+"""
+
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
+import torch
+import torch.nn as nn
+
+from molfun.losses.base import LOSS_REGISTRY, LossFunction
+
+if TYPE_CHECKING:
+    import ml_collections
+
+
+@LOSS_REGISTRY.register("openfold")
+class OpenFoldLoss(LossFunction):
+    """
+    Composite structure loss that wraps OpenFold's AlphaFoldLoss.
+
+    Loss terms (weights configurable via config.loss or with_weights()):
+      - fape                    Frame Aligned Point Error (backbone + side-chain)
+      - supervised_chi          Side-chain torsion angle loss
+      - distogram               Pairwise Cβ-distance distribution loss
+      - plddt_loss              Predicted lDDT confidence loss
+      - masked_msa              Masked MSA reconstruction (disabled by default)
+      - experimentally_resolved Experimentally resolved atom loss (disabled by default)
+      - violation               Steric clash / bond geometry (disabled by default)
+
+    Args:
+        loss_config: ``config.loss`` sub-config from OpenFold's ``model_config()``.
+        disable_masked_msa: Zero-out masked-MSA weight (default True).
+            Enable only if the data pipeline produces ``true_msa`` / ``bert_mask``.
+        disable_experimentally_resolved: Zero-out this term (default True).
+            Enable only if PDB resolution metadata is present in the batch.
+    """
+
+    def __init__(
+        self,
+        loss_config: "ml_collections.ConfigDict",
+        disable_masked_msa: bool = True,
+        disable_experimentally_resolved: bool = True,
+    ):
+        super().__init__()
+        try:
+            from openfold.utils.loss import AlphaFoldLoss
+        except ImportError:
+            raise ImportError(
+                "OpenFold is required: "
+                "pip install git+https://github.com/aqlaboratory/openfold"
+            )
+        import copy
+        loss_config = copy.deepcopy(loss_config)
+        if disable_masked_msa:
+            loss_config.masked_msa.weight = 0.0
+        if disable_experimentally_resolved:
+            loss_config.experimentally_resolved.weight = 0.0
+
+        self._loss_fn = AlphaFoldLoss(loss_config)
+        self._loss_config = loss_config
+
+    # ------------------------------------------------------------------
+    # Convenience constructors
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def fape_only(cls, config) -> "OpenFoldLoss":
+        """FAPE + supervised chi only — no MSA, distogram or pLDDT terms."""
+        import copy
+        cfg = copy.deepcopy(config.loss)
+        cfg.masked_msa.weight = 0.0
+        cfg.distogram.weight = 0.0
+        cfg.experimentally_resolved.weight = 0.0
+        cfg.plddt_loss.weight = 0.0
+        if hasattr(cfg, "tm"):
+            cfg.tm.weight = 0.0
+        return cls(cfg)
+
+    @classmethod
+    def with_weights(cls, config, **weights) -> "OpenFoldLoss":
+        """
+        Override individual loss-term weights.
+
+        Example::
+
+            OpenFoldLoss.with_weights(config, fape=1.0, masked_msa=0.0)
+        """
+        import copy
+        cfg = copy.deepcopy(config.loss)
+        for term, w in weights.items():
+            if hasattr(cfg, term):
+                cfg[term].weight = w
+        return cls(cfg)
+
+    # ------------------------------------------------------------------
+    # LossFunction interface
+    # ------------------------------------------------------------------
+
+    def forward(
+        self,
+        preds,
+        targets: Optional[torch.Tensor] = None,
+        batch: Optional[dict] = None,
+    ) -> dict[str, torch.Tensor]:
+        """
+        Compute OpenFold structure loss.
+
+        Args:
+            preds: Raw OpenFold output dict (from TrunkOutput.extra["_raw_outputs"]).
+                   Must contain keys: ``sm``, ``distogram_logits``,
+                   ``final_atom_positions``, ``final_atom_mask``, etc.
+            targets: Unused (ground truth is embedded in ``batch``).
+            batch: Feature dict with ground truth fields produced by
+                   ``OpenFoldFeaturizer``. Required.
+
+        Returns:
+            ``{"structure_loss": scalar_tensor}``
+        """
+        if batch is None:
+            raise ValueError(
+                "OpenFoldLoss requires `batch` (ground-truth feature dict). "
+                "Pass batch=feature_dict when calling the loss."
+            )
+        if not isinstance(preds, dict):
+            raise TypeError(
+                "OpenFoldLoss expects `preds` to be the raw OpenFold output dict "
+                "(TrunkOutput.extra['_raw_outputs'])."
+            )
+
+        batch_no_recycle = strip_recycling_dim(batch)
+        batch_no_recycle = fill_missing_batch_fields(batch_no_recycle)
+
+        # AlphaFoldLoss unconditionally calls find_structural_violations, which
+        # needs a resource file that may be absent in pip-installed OpenFold.
+        # Pre-populate "violation" with zeros so the call is bypassed.
+        raw_out = preds
+        if "violation" not in raw_out:
+            raw_out = dict(raw_out)
+            raw_out["violation"] = make_zero_violation(raw_out["final_atom_positions"])
+
+        scalar = self._loss_fn(raw_out, batch_no_recycle)
+        return {"structure_loss": scalar}
+
+    def describe(self) -> dict:
+        """Return the active loss weights for logging / inspection."""
+        terms = {}
+        for term in (
+            "fape", "supervised_chi", "masked_msa", "distogram",
+            "plddt_loss", "experimentally_resolved",
+        ):
+            try:
+                terms[term] = float(self._loss_config[term].weight)
+            except Exception:
+                pass
+        return {"type": "OpenFoldLoss", "loss_weights": terms}
+
+
+# ======================================================================
+# Batch pre-processing helpers
+# ======================================================================
+
+def strip_recycling_dim(batch: dict) -> dict:
+    """
+    Remove the trailing recycling dimension R from all tensor fields.
+
+    OpenFold input tensors have shape ``[..., R]`` where R is the number of
+    recycling iterations.  AlphaFoldLoss expects ``[...]`` (R already consumed).
+    Taking index 0 on the last dim is correct for the common R=1 case.
+    """
+    out = {}
+    for k, v in batch.items():
+        if isinstance(v, torch.Tensor) and v.dim() > 0:
+            out[k] = v[..., 0]
+        else:
+            out[k] = v
+    return out
+
+
+def fill_missing_batch_fields(batch: dict) -> dict:
+    """
+    Add zero-filled fallback tensors for optional AlphaFoldLoss fields.
+
+    AlphaFoldLoss calls every loss term regardless of its weight, so dummy
+    tensors must exist for terms like masked-MSA (needs ``true_msa`` /
+    ``bert_mask``) and experimentally-resolved (needs ``resolution``).
+    """
+    batch = dict(batch)
+    ref = batch.get("aatype")
+    device = ref.device if ref is not None else torch.device("cpu")
+    B = ref.shape[0] if (ref is not None and ref.dim() > 0) else 1
+
+    if "resolution" not in batch:
+        batch["resolution"] = torch.zeros(B, device=device)
+
+    if "true_msa" not in batch:
+        msa = batch.get("msa")
+        if msa is not None:
+            batch["true_msa"] = msa.clone()
+        elif "msa_feat" in batch:
+            s = batch["msa_feat"].shape  # [B, N_msa, L, 49]
+            batch["true_msa"] = torch.zeros(
+                s[0], s[1], s[2], dtype=torch.long, device=device
+            )
+        else:
+            batch["true_msa"] = torch.zeros(B, 1, 1, dtype=torch.long, device=device)
+
+    if "bert_mask" not in batch:
+        batch["bert_mask"] = torch.zeros_like(batch["true_msa"].float())
+
+    return batch
+
+
+def make_zero_violation(ref: torch.Tensor) -> dict:
+    """
+    Build a zero-filled violation dict matching ``find_structural_violations`` output.
+
+    Used to skip the costly (and file-system-dependent) violation calculation
+    when the resource file ``stereo_chemical_props.txt`` is absent.
+    """
+    z1    = ref.new_zeros(())
+    B, L  = ref.shape[:2]
+    z_BL   = ref.new_zeros(B, L)
+    z_BL14 = ref.new_zeros(B, L, 14)
+    return {
+        "between_residues": {
+            "bonds_c_n_loss_mean":                    z1,
+            "angles_ca_c_n_loss_mean":                z1,
+            "angles_c_n_ca_loss_mean":                z1,
+            "connections_per_residue_loss_sum":        z_BL,
+            "connections_per_residue_violation_mask":  z_BL,
+            "clashes_mean_loss":                       z1,
+            "clashes_per_atom_loss_sum":               z_BL14,
+            "clashes_per_atom_clash_mask":             z_BL14,
+            "clashes_per_atom_num_clash":              z_BL14,
+        },
+        "within_residues": {
+            "per_atom_loss_sum":    z_BL14,
+            "per_atom_violations":  z_BL14,
+            "per_atom_num_clash":   z_BL14,
+        },
+        "total_per_residue_violations_mask": z_BL,
+    }

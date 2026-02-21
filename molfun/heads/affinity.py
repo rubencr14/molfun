@@ -7,6 +7,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from molfun.core.types import TrunkOutput
+from molfun.losses.affinity import MSELoss, HuberLoss, MAELoss, PearsonLoss
+
+_AFFINITY_LOSSES = {
+    "mse":     MSELoss,
+    "mae":     MAELoss,
+    "huber":   HuberLoss,
+    "pearson": PearsonLoss,
+}
 
 
 class AffinityHead(nn.Module):
@@ -113,19 +121,18 @@ class AffinityHead(nn.Module):
         loss_fn: str = "mse",
     ) -> dict[str, torch.Tensor]:
         """
-        Compute loss.
-        
+        Compute affinity loss.
+
         Args:
             preds: [B, 1] predicted values.
             targets: [B] or [B, 1] target values.
-            loss_fn: "mse" or "huber".
-        
+            loss_fn: one of "mse", "mae", "huber", "pearson".
+
         Returns:
-            Dict with named losses.
+            Dict with named loss tensors.
         """
-        targets = targets.view_as(preds)
-        if loss_fn == "huber":
-            loss = F.huber_loss(preds, targets)
-        else:
-            loss = F.mse_loss(preds, targets)
-        return {"affinity_loss": loss}
+        loss_cls = _AFFINITY_LOSSES.get(loss_fn)
+        if loss_cls is None:
+            available = list(_AFFINITY_LOSSES)
+            raise ValueError(f"Unknown affinity loss '{loss_fn}'. Choose from {available}")
+        return loss_cls()(preds, targets)

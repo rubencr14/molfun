@@ -16,6 +16,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
+from molfun.losses import LOSS_REGISTRY
+
 
 class EMA:
     """
@@ -253,6 +255,34 @@ class FinetuneStrategy(ABC):
 
         return history
 
+    def _compute_loss(
+        self,
+        model,
+        preds,
+        targets: Optional[torch.Tensor],
+        batch: dict,
+    ) -> dict[str, torch.Tensor]:
+        """
+        Resolve and call the correct loss function.
+
+        Two execution paths:
+
+        **Structure heads** (e.g. StructureLossHead):
+            ``head.forward()`` already called ``OpenFoldLoss`` internally and
+            returned a scalar loss tensor.  ``head.loss(scalar, None)`` just
+            wraps it in a dict.  The registry is used *inside* the head.
+
+        **Affinity heads** (e.g. AffinityHead):
+            ``head.forward()`` returns raw predictions.  ``head.loss()``
+            delegates to ``LOSS_REGISTRY[loss_fn]`` to compute the actual
+            loss.
+
+        In both cases the training loop calls ``model.head.loss()``.
+        The registry is what ``head.loss()`` uses internally — giving users
+        one consistent place to register custom losses.
+        """
+        return model.head.loss(preds, targets, loss_fn=self.loss_fn)
+
     def _train_epoch(
         self, model, loader, optimizer, scheduler, scaler,
         all_params, global_step,
@@ -271,7 +301,7 @@ class FinetuneStrategy(ABC):
 
             with torch.amp.autocast("cuda", enabled=self.amp):
                 result = model.forward(batch, mask=mask)
-                losses = model.head.loss(result["preds"], targets, loss_fn=self.loss_fn)
+                losses = self._compute_loss(model, result["preds"], targets, batch)
                 loss = next(iter(losses.values())) / self.accumulation_steps
 
             scaler.scale(loss).backward()
@@ -313,7 +343,7 @@ class FinetuneStrategy(ABC):
             if mask is not None:
                 mask = mask.to(model.device)
             result = model.forward(batch, mask=mask)
-            losses = model.head.loss(result["preds"], targets, loss_fn=self.loss_fn)
+            losses = self._compute_loss(model, result["preds"], targets, batch)
             total_loss += next(iter(losses.values())).item()
             n += 1
 
