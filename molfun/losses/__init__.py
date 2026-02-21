@@ -38,8 +38,10 @@ import molfun.losses.affinity   # noqa: F401  registers mse, mae, huber, pearson
 import molfun.losses.openfold   # noqa: F401  registers openfold
 
 from molfun.losses.affinity import MSELoss, MAELoss, HuberLoss, PearsonLoss
-from molfun.losses.openfold import (
-    OpenFoldLoss,
+from molfun.losses.openfold import OpenFoldLoss
+
+# Helpers re-exported from molfun.helpers for convenience
+from molfun.helpers.openfold import (
     strip_recycling_dim,
     fill_missing_batch_fields,
     make_zero_violation,
@@ -56,7 +58,7 @@ __all__ = [
     "PearsonLoss",
     # Structure losses
     "OpenFoldLoss",
-    # Helpers (public for advanced use / testing)
+    # OpenFold batch helpers (re-exported for convenience)
     "strip_recycling_dim",
     "fill_missing_batch_fields",
     "make_zero_violation",

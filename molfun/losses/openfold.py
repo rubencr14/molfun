@@ -2,7 +2,8 @@
 OpenFold structure loss.
 
 Wraps OpenFold's AlphaFoldLoss so it fits the LossFunction interface.
-All batch pre-processing helpers live here so StructureLossHead stays thin.
+Batch pre-processing helpers are in molfun.helpers.openfold and re-exported
+here for convenience.
 
 Usage
 -----
@@ -24,9 +25,13 @@ scalar = loss_fn(raw_openfold_outputs, batch=feature_dict)
 from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 import torch
-import torch.nn as nn
 
 from molfun.losses.base import LOSS_REGISTRY, LossFunction
+from molfun.helpers.openfold import (
+    strip_recycling_dim,
+    fill_missing_batch_fields,
+    make_zero_violation,
+)
 
 if TYPE_CHECKING:
     import ml_collections
@@ -173,89 +178,3 @@ class OpenFoldLoss(LossFunction):
                 pass
         return {"type": "OpenFoldLoss", "loss_weights": terms}
 
-
-# ======================================================================
-# Batch pre-processing helpers
-# ======================================================================
-
-def strip_recycling_dim(batch: dict) -> dict:
-    """
-    Remove the trailing recycling dimension R from all tensor fields.
-
-    OpenFold input tensors have shape ``[..., R]`` where R is the number of
-    recycling iterations.  AlphaFoldLoss expects ``[...]`` (R already consumed).
-    Taking index 0 on the last dim is correct for the common R=1 case.
-    """
-    out = {}
-    for k, v in batch.items():
-        if isinstance(v, torch.Tensor) and v.dim() > 0:
-            out[k] = v[..., 0]
-        else:
-            out[k] = v
-    return out
-
-
-def fill_missing_batch_fields(batch: dict) -> dict:
-    """
-    Add zero-filled fallback tensors for optional AlphaFoldLoss fields.
-
-    AlphaFoldLoss calls every loss term regardless of its weight, so dummy
-    tensors must exist for terms like masked-MSA (needs ``true_msa`` /
-    ``bert_mask``) and experimentally-resolved (needs ``resolution``).
-    """
-    batch = dict(batch)
-    ref = batch.get("aatype")
-    device = ref.device if ref is not None else torch.device("cpu")
-    B = ref.shape[0] if (ref is not None and ref.dim() > 0) else 1
-
-    if "resolution" not in batch:
-        batch["resolution"] = torch.zeros(B, device=device)
-
-    if "true_msa" not in batch:
-        msa = batch.get("msa")
-        if msa is not None:
-            batch["true_msa"] = msa.clone()
-        elif "msa_feat" in batch:
-            s = batch["msa_feat"].shape  # [B, N_msa, L, 49]
-            batch["true_msa"] = torch.zeros(
-                s[0], s[1], s[2], dtype=torch.long, device=device
-            )
-        else:
-            batch["true_msa"] = torch.zeros(B, 1, 1, dtype=torch.long, device=device)
-
-    if "bert_mask" not in batch:
-        batch["bert_mask"] = torch.zeros_like(batch["true_msa"].float())
-
-    return batch
-
-
-def make_zero_violation(ref: torch.Tensor) -> dict:
-    """
-    Build a zero-filled violation dict matching ``find_structural_violations`` output.
-
-    Used to skip the costly (and file-system-dependent) violation calculation
-    when the resource file ``stereo_chemical_props.txt`` is absent.
-    """
-    z1    = ref.new_zeros(())
-    B, L  = ref.shape[:2]
-    z_BL   = ref.new_zeros(B, L)
-    z_BL14 = ref.new_zeros(B, L, 14)
-    return {
-        "between_residues": {
-            "bonds_c_n_loss_mean":                    z1,
-            "angles_ca_c_n_loss_mean":                z1,
-            "angles_c_n_ca_loss_mean":                z1,
-            "connections_per_residue_loss_sum":        z_BL,
-            "connections_per_residue_violation_mask":  z_BL,
-            "clashes_mean_loss":                       z1,
-            "clashes_per_atom_loss_sum":               z_BL14,
-            "clashes_per_atom_clash_mask":             z_BL14,
-            "clashes_per_atom_num_clash":              z_BL14,
-        },
-        "within_residues": {
-            "per_atom_loss_sum":    z_BL14,
-            "per_atom_violations":  z_BL14,
-            "per_atom_num_clash":   z_BL14,
-        },
-        "total_per_residue_violations_mask": z_BL,
-    }

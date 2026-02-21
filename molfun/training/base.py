@@ -10,81 +10,13 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import Optional
-import math
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from molfun.losses import LOSS_REGISTRY
-
-
-class EMA:
-    """
-    Exponential Moving Average of model parameters.
-
-    Maintains a shadow copy: shadow = decay * shadow + (1 - decay) * param.
-    Swap into the model for inference, then restore for continued training.
-    """
-
-    def __init__(self, parameters: list[nn.Parameter], decay: float = 0.999):
-        self.decay = decay
-        self.shadow = [p.data.clone() for p in parameters]
-        self.backup: list[torch.Tensor] = []
-        self._params = parameters
-
-    @torch.no_grad()
-    def update(self):
-        for s, p in zip(self.shadow, self._params):
-            s.mul_(self.decay).add_(p.data, alpha=1 - self.decay)
-
-    def apply(self):
-        """Swap EMA weights into model (save originals in backup)."""
-        self.backup = [p.data.clone() for p in self._params]
-        for s, p in zip(self.shadow, self._params):
-            p.data.copy_(s)
-
-    def restore(self):
-        """Restore original weights from backup."""
-        for b, p in zip(self.backup, self._params):
-            p.data.copy_(b)
-        self.backup = []
-
-    def state_dict(self) -> dict:
-        return {"shadow": self.shadow, "decay": self.decay}
-
-    def load_state_dict(self, state: dict):
-        self.shadow = state["shadow"]
-        self.decay = state["decay"]
-
-
-def build_scheduler(
-    optimizer: torch.optim.Optimizer,
-    name: str,
-    warmup_steps: int,
-    total_steps: int,
-    min_lr: float = 0.0,
-) -> torch.optim.lr_scheduler.LambdaLR:
-    """
-    Build LR scheduler with linear warmup followed by decay.
-
-    Supported: "cosine", "linear", "constant".
-    """
-
-    def _lr_lambda(step: int) -> float:
-        if step < warmup_steps:
-            return step / max(warmup_steps, 1)
-        if name == "constant":
-            return 1.0
-        progress = (step - warmup_steps) / max(total_steps - warmup_steps, 1)
-        progress = min(progress, 1.0)
-        if name == "cosine":
-            return min_lr + (1.0 - min_lr) * 0.5 * (1 + math.cos(math.pi * progress))
-        if name == "linear":
-            return min_lr + (1.0 - min_lr) * (1.0 - progress)
-        return 1.0
-
-    return torch.optim.lr_scheduler.LambdaLR(optimizer, _lr_lambda)
+from molfun.helpers.training import EMA, build_scheduler, unpack_batch, to_device
 
 
 class FinetuneStrategy(ABC):
@@ -292,8 +224,8 @@ class FinetuneStrategy(ABC):
         optimizer.zero_grad()
 
         for i, batch_data in enumerate(loader):
-            batch, targets, mask = _unpack_batch(batch_data)
-            batch = _to_device(batch, model.device)
+            batch, targets, mask = unpack_batch(batch_data)
+            batch = to_device(batch, model.device)
             if targets is not None:
                 targets = targets.to(model.device)
             if mask is not None:
@@ -336,8 +268,8 @@ class FinetuneStrategy(ABC):
         total_loss = 0.0
         n = 0
         for batch_data in loader:
-            batch, targets, mask = _unpack_batch(batch_data)
-            batch = _to_device(batch, model.device)
+            batch, targets, mask = unpack_batch(batch_data)
+            batch = to_device(batch, model.device)
             if targets is not None:
                 targets = targets.to(model.device)
             if mask is not None:
@@ -383,50 +315,3 @@ class FinetuneStrategy(ABC):
             "early_stopping_patience": self.patience,
         }
 
-
-# ======================================================================
-# Helpers (shared by all strategies)
-# ======================================================================
-
-def _unpack_batch(batch_data):
-    """
-    Normalize batch from DataLoader into (features, targets, mask).
-
-    Supports:
-    - (features_dict, targets) or (features_dict, targets, mask)  — affinity
-    - (features_tensor, targets) from TensorDataset
-    - dict with "labels" key
-    - dict without "labels" key (structure fine-tuning: targets = None)
-    """
-    if isinstance(batch_data, (list, tuple)):
-        if len(batch_data) == 3:
-            return batch_data[0], batch_data[1], batch_data[2]
-        features, targets = batch_data[0], batch_data[1]
-        if isinstance(features, dict):
-            mask = features.get("all_atom_mask")
-        else:
-            mask = None
-        return features, targets, mask
-    if isinstance(batch_data, dict):
-        if "labels" in batch_data:
-            targets = batch_data.pop("labels")
-        else:
-            # Structure fine-tuning: batch IS the feature+GT dict, no targets
-            targets = None
-        # Use .get() but avoid Python's `or` which would call tensor.__bool__
-        mask = batch_data.get("all_atom_mask")
-        if mask is None:
-            mask = batch_data.get("mask")
-        return batch_data, targets, mask
-    raise ValueError(f"Unsupported batch format: {type(batch_data)}")
-
-
-def _to_device(batch, device: str):
-    if isinstance(batch, dict):
-        return {
-            k: v.to(device) if isinstance(v, torch.Tensor) else v
-            for k, v in batch.items()
-        }
-    if isinstance(batch, torch.Tensor):
-        return batch.to(device)
-    return batch
