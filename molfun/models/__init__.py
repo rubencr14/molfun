@@ -1,8 +1,8 @@
 """
-Model implementations for biological language models.
+Model wrappers for fine-tuning and inference.
 """
 
-from molfun.models.bio_language_model import BioLanguageModel
-from molfun.models.base_model import BaseBioModel, ModelOptimizer
+from molfun.models.structure import MolfunStructureModel
+from molfun.models.openfold import OpenFold
 
-__all__ = ["BioLanguageModel", "BaseBioModel", "ModelOptimizer"]
+__all__ = ["MolfunStructureModel", "OpenFold"]

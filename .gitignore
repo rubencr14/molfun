@@ -212,6 +212,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Training runs
+runs/
+
 # Project specific
 *.pyc
 .pytest_cache/
