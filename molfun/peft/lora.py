@@ -46,9 +46,9 @@ class LoRALinear(nn.Module):
             torch.empty(rank, self.in_features, device=self.weight.device, dtype=self.weight.dtype)
         )
         self.lora_B = nn.Parameter(
-            torch.zeros(self.out_features, rank, device=self.weight.device, dtype=self.weight.dtype)
+            torch.zeros(self.out_features, rank, device=self.weight.device, dtype=self.weight.dtype) #initialize the LoRA B matrix to 0
         )
-        nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
+        nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5)) #randomly initialize the LoRA matrix
         self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
         self._merged = False
 
@@ -201,7 +201,7 @@ class MolfunPEFT:
         return self._peft_model
 
     def _apply_builtin_lora(self, model: nn.Module) -> nn.Module:
-        """Fallback: inject LoRALinear layers manually."""
+        """Fallback: inject LoRALinear layers manually if PEFT is not installed."""
         for p in model.parameters():
             p.requires_grad = False
 
