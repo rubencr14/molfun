@@ -107,6 +107,8 @@ class FinetuneStrategy(ABC):
         epochs: int = 10,
         verbose: bool = True,
         tracker=None,
+        distributed=None,
+        gradient_checkpointing: bool = False,
     ) -> list[dict]:
         """
         Run the full training loop.
@@ -117,11 +119,38 @@ class FinetuneStrategy(ABC):
             val_loader: Optional validation data.
             epochs: Number of epochs.
             tracker: Optional BaseTracker for experiment logging.
+            distributed: Optional ``BaseDistributedStrategy`` (DDPStrategy
+                or FSDPStrategy) for multi-GPU training.
+            gradient_checkpointing: Enable activation checkpointing to
+                reduce peak VRAM (~40-60% savings, ~25-35% slower).
 
         Returns:
             List of per-epoch metric dicts.
         """
         self.setup(model)
+
+        if gradient_checkpointing:
+            from molfun.training.checkpointing import apply_gradient_checkpointing
+            n_ckpt = apply_gradient_checkpointing(model.adapter)
+            if verbose:
+                print(f"  Gradient checkpointing: {n_ckpt} modules wrapped")
+
+        if distributed is not None:
+            device = torch.device(f"cuda:{distributed.local_rank}")
+            model.adapter = distributed.wrap_model(model.adapter, device)
+            train_loader = distributed.wrap_loader(
+                train_loader, distributed.local_rank,
+                distributed._world_size if hasattr(distributed, '_world_size') else 1,
+            )
+            if val_loader is not None:
+                val_loader = distributed.wrap_loader(
+                    val_loader, distributed.local_rank,
+                    distributed._world_size if hasattr(distributed, '_world_size') else 1,
+                )
+            model.device = str(device)
+
+        self._distributed = distributed
+
         groups = self.param_groups(model)
         optimizer = torch.optim.AdamW(groups, weight_decay=self.weight_decay)
 
@@ -138,7 +167,9 @@ class FinetuneStrategy(ABC):
         if self.ema_decay > 0:
             self._ema = EMA(all_params, decay=self.ema_decay)
 
-        if tracker is not None:
+        is_main = self._distributed is None or self._distributed.is_main_process
+
+        if tracker is not None and is_main:
             tracker.log_config(self.describe())
 
         best_val = float("inf")
@@ -147,6 +178,10 @@ class FinetuneStrategy(ABC):
         global_step = 0
 
         for epoch in range(epochs):
+            # Set epoch on DistributedSampler for proper shuffling
+            if hasattr(train_loader, "sampler") and hasattr(train_loader.sampler, "set_epoch"):
+                train_loader.sampler.set_epoch(epoch)
+
             model.adapter.train()
             if model.head is not None:
                 model.head.train()
@@ -177,10 +212,10 @@ class FinetuneStrategy(ABC):
 
             history.append(metrics)
 
-            if tracker is not None:
+            if tracker is not None and is_main:
                 tracker.log_metrics(metrics, step=epoch + 1)
 
-            if verbose:
+            if verbose and is_main:
                 val_str = f"{metrics['val_loss']:.4f}" if "val_loss" in metrics else "   —  "
                 print(
                     f"  Epoch {epoch+1:>3}/{epochs}  "
@@ -190,7 +225,8 @@ class FinetuneStrategy(ABC):
                 )
 
             if self.patience > 0 and patience_counter >= self.patience:
-                print(f"  Early stopping at epoch {epoch+1}")
+                if is_main:
+                    print(f"  Early stopping at epoch {epoch+1}")
                 break
 
         return history
