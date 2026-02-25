@@ -1,5 +1,5 @@
 """
-Data pipeline: sources, datasets, splits, storage.
+Data pipeline: sources, datasets, splits, storage, parsers.
 """
 
 from molfun.data.sources.pdb import PDBFetcher

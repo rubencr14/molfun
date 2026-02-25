@@ -18,14 +18,12 @@ import urllib.error
 import torch
 
 from molfun.data.storage import open_path, exists, ensure_dir
+from molfun.data.parsers.a3m import A3MParser
+from molfun.data.parsers.residue import AA_TO_IDX as _AA_TO_IDX_NEW
 
 _COLABFOLD_API = "https://api.colabfold.com"
 
-_AA_TO_IDX = {
-    "A": 0, "R": 1, "N": 2, "D": 3, "C": 4, "Q": 5, "E": 6, "G": 7,
-    "H": 8, "I": 9, "L": 10, "K": 11, "M": 12, "F": 13, "P": 14, "S": 15,
-    "T": 16, "W": 17, "Y": 18, "V": 19, "-": 21, "X": 20,
-}
+_AA_TO_IDX = _AA_TO_IDX_NEW
 
 
 class MSAProvider:
@@ -149,71 +147,14 @@ class MSAProvider:
         )
 
     # ------------------------------------------------------------------
-    # A3M parsing
+    # A3M parsing (delegated to A3MParser)
     # ------------------------------------------------------------------
 
     @staticmethod
     def _parse_a3m(a3m_string: str, max_depth: int = 512) -> dict:
-        """
-        Parse A3M format → MSA tensors.
-
-        A3M: FASTA-like, lowercase = insertions (counted as deletions).
-        """
-        sequences = []
-        current = []
-        for line in a3m_string.splitlines():
-            if line.startswith(">"):
-                if current:
-                    sequences.append("".join(current))
-                current = []
-            else:
-                current.append(line.strip())
-        if current:
-            sequences.append("".join(current))
-
-        if not sequences:
-            raise ValueError("Empty A3M: no sequences found.")
-
-        sequences = sequences[:max_depth]
-        query_len = sum(1 for c in sequences[0] if c == c.upper() and c != "-")
-
-        msa_rows = []
-        del_rows = []
-
-        for seq in sequences:
-            row = []
-            dels = []
-            del_count = 0
-            for c in seq:
-                if c.islower():
-                    del_count += 1
-                    continue
-                row.append(_AA_TO_IDX.get(c.upper(), 20))
-                dels.append(del_count)
-                del_count = 0
-
-            if len(row) < query_len:
-                row.extend([21] * (query_len - len(row)))
-                dels.extend([0] * (query_len - len(dels)))
-            elif len(row) > query_len:
-                row = row[:query_len]
-                dels = dels[:query_len]
-
-            msa_rows.append(row)
-            del_rows.append(dels)
-
-        N = len(msa_rows)
-        L = query_len
-
-        msa = torch.tensor(msa_rows, dtype=torch.long)        # [N, L]
-        deletion = torch.tensor(del_rows, dtype=torch.float32) # [N, L]
-        mask = (msa != 21).float()                             # [N, L]
-
-        return {
-            "msa": msa,
-            "deletion_matrix": deletion,
-            "msa_mask": mask,
-        }
+        """Parse A3M format → MSA tensors via A3MParser."""
+        parser = A3MParser(max_depth=max_depth)
+        return parser.parse_text(a3m_string).to_dict()
 
     # ------------------------------------------------------------------
     # Cache

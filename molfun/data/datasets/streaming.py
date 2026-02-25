@@ -37,6 +37,8 @@ import torch
 from torch.utils.data import IterableDataset, get_worker_info
 
 from molfun.data.storage import open_path, is_remote
+from molfun.data.parsers import PDBParser as _PDBStructureParser
+from molfun.data.parsers.base import ParsedStructure
 
 
 class StreamingStructureDataset(IterableDataset):
@@ -173,66 +175,11 @@ class StreamingStructureDataset(IterableDataset):
 
         if path.endswith(".cif"):
             try:
-                from Bio.PDB import MMCIFParser
-                parser = MMCIFParser(QUIET=True)
+                from molfun.data.parsers import CIFParser
+                parser = CIFParser(max_seq_len=self.max_seq_len)
             except ImportError:
                 raise ImportError("BioPython required for streaming CIF: pip install biopython")
-            import tempfile, os
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".cif", delete=False) as tmp:
-                tmp.write(content)
-                tmp_path = tmp.name
-            try:
-                structure = parser.get_structure("s", tmp_path)
-                return self._extract_features(structure)
-            finally:
-                os.unlink(tmp_path)
+            return parser.parse_text(content).to_dict()
         else:
-            return self._parse_pdb_text(content)
-
-    def _extract_features(self, structure) -> dict:
-        from molfun.data.datasets.structure import StructureDataset
-        ds = StructureDataset.__new__(StructureDataset)
-        ds.max_seq_len = self.max_seq_len
-        return ds._extract_features_biopython(structure)
-
-    def _parse_pdb_text(self, text: str) -> dict:
-        """Minimal PDB parser from text (no BioPython needed)."""
-        from molfun.data.datasets.structure import _THREE_TO_ONE
-
-        residues = []
-        seen = set()
-        for line in text.splitlines():
-            if not line.startswith("ATOM"):
-                continue
-            resname = line[17:20].strip()
-            chain = line[21]
-            resseq = line[22:26].strip()
-            atom_name = line[12:16].strip()
-            key = (chain, resseq)
-            if key not in seen:
-                seen.add(key)
-                residues.append({"aa": _THREE_TO_ONE.get(resname, "X"), "ca": None})
-            if atom_name == "CA":
-                x = float(line[30:38])
-                y = float(line[38:46])
-                z = float(line[46:54])
-                residues[-1]["ca"] = [x, y, z]
-
-        L = min(len(residues), self.max_seq_len)
-        residues = residues[:L]
-        sequence = "".join(r["aa"] for r in residues)
-
-        ca_coords = torch.zeros(L, 3)
-        ca_mask = torch.zeros(L)
-        for i, r in enumerate(residues):
-            if r["ca"] is not None:
-                ca_coords[i] = torch.tensor(r["ca"])
-                ca_mask[i] = 1.0
-
-        return {
-            "sequence": sequence,
-            "residue_index": torch.arange(L),
-            "all_atom_positions": ca_coords,
-            "all_atom_mask": ca_mask,
-            "seq_length": torch.tensor([L]),
-        }
+            parser = _PDBStructureParser(max_seq_len=self.max_seq_len)
+            return parser.parse_text(content).to_dict()
