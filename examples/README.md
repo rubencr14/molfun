@@ -19,6 +19,7 @@ pip install molfun[openfold]  # core + OpenFold support
 | [`parse_and_prepare.py`](parse_and_prepare.py) | Parse PDB/CIF/SDF/MOL2/A3M/FASTA files with one unified API | ~1 min | No |
 | [`tracked_experiment.py`](tracked_experiment.py) | Log to W&B + Comet + MLflow + HF Hub simultaneously | ~1 min | No |
 | [`streaming_cloud.py`](streaming_cloud.py) | Stream structures from S3/MinIO/GCS without downloading | ~1 min | No |
+| [`benchmark_models.py`](benchmark_models.py) | Compare your model vs AlphaFold 3, export LaTeX/Markdown tables for papers | ~20 min | Yes |
 
 ## By Use Case
 
@@ -39,6 +40,9 @@ pip install molfun[openfold]  # core + OpenFold support
 
 **My dataset lives in S3 / MinIO / GCS:**
 → `streaming_cloud.py` streams structures without downloading the full dataset.
+
+**I want to compare my model against a baseline for a paper:**
+→ `benchmark_models.py` runs both models on the same suite, builds a leaderboard, and exports LaTeX + Markdown tables ready for publication.
 
 ## Common Patterns
 
