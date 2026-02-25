@@ -1,12 +1,12 @@
-# Molfun — Fine-Tuning & GPU Acceleration for Molecular ML
+# Molfun — Fine-Tuning & Modular Architecture for Molecular ML
 
 ![Molfun Banner](./docs/banner.png)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](#installation)
 [![CUDA](https://img.shields.io/badge/CUDA-12%2B-green.svg)](#requirements)
 
-**Molfun** is an open-source framework for **fine-tuning protein ML models** and **accelerating molecular simulations** on GPU. It provides a unified interface to adapt pre-trained structure prediction models (OpenFold/AlphaFold2, and in the future ESMFold, Protenix, docking models, etc.) to specific tasks like binding affinity prediction, with production-grade training infrastructure and high-performance Triton kernels.
+**Molfun** is an open-source framework for **fine-tuning protein ML models** with a **modular, plug-and-play architecture** for research and experimentation. It provides a unified interface to adapt pre-trained structure prediction models (OpenFold/AlphaFold2, and in the future ESMFold, Protenix, docking models, etc.) to specific tasks like binding affinity prediction, while making it easy to swap, combine, and extend every internal component — attention mechanisms, trunk blocks, structure modules, and embedders.
 
 ---
 
@@ -14,9 +14,9 @@
 
 Pre-trained protein models like AlphaFold2 contain enormous amounts of structural knowledge, but using them for **specific scientific tasks** (predicting binding affinity, classifying protein families, scoring docking poses) requires fine-tuning — and doing it well is surprisingly hard.
 
-You need to decide **what to freeze**, **how to inject trainable parameters**, **which learning rate schedule** to use, and how to avoid catastrophic forgetting on a small dataset. You also need proper EMA, gradient accumulation, and early stopping to get stable results.
+You need to decide **what to freeze**, **how to inject trainable parameters**, **which learning rate schedule** to use, and how to avoid catastrophic forgetting on a small dataset. You also need proper EMA, gradient accumulation, and early stopping to get stable results. And if you want to experiment with new architectural ideas — a different attention mechanism, a diffusion-based structure module — you shouldn't have to rewrite the training loop.
 
-Molfun handles all of this. You pick a strategy, point it at your data, and train:
+Molfun handles all of this:
 
 ```python
 from molfun.models.structure import MolfunStructureModel
@@ -29,7 +29,17 @@ strategy = LoRAFinetune(rank=8, lr_lora=1e-4, lr_head=1e-3, ema_decay=0.999)
 history = model.fit(train_loader, val_loader, strategy=strategy, epochs=30)
 ```
 
-Beyond fine-tuning, Molfun also provides **GPU-accelerated kernels** for molecular analysis (RMSD, contact maps, distances) that are 10-800x faster than CPU tools, and an **MD analysis module** for trajectory processing.
+Or build entirely custom architectures from modular components:
+
+```python
+from molfun.modules.builder import ModelBuilder
+
+model = ModelBuilder(
+    embedder="input", block="pairformer", structure_module="ipa",
+    n_blocks=24,
+    block_config={"d_single": 256, "d_pair": 128, "attention_cls": "flash"},
+).build()
+```
 
 ---
 
@@ -52,9 +62,49 @@ Every strategy includes **warmup scheduling**, **cosine/linear LR decay**, **EMA
 
 The model wrapper (`MolfunStructureModel`) is backend-agnostic. Today it supports OpenFold; adding ESMFold, Protenix, or any new model means implementing a single adapter class.
 
-### 2. GPU Kernels
+### 2. Modular Architecture
 
-Molfun provides Triton GPU kernels for the geometric primitives that molecular ML pipelines depend on. These aren't just faster — they enable workflows that would be impractical on CPU.
+Molfun's `molfun.modules` package provides a **plug-and-play system** for protein ML research. Every major component has an abstract base class, a registry, and multiple built-in implementations:
+
+| Component | Registry | Built-in implementations |
+|-----------|----------|-------------------------|
+| **Attention** | `ATTENTION_REGISTRY` | `standard`, `flash`, `linear`, `gated` |
+| **Block** | `BLOCK_REGISTRY` | `evoformer`, `pairformer`, `simple_transformer` |
+| **Structure Module** | `STRUCTURE_MODULE_REGISTRY` | `ipa`, `diffusion` |
+| **Embedder** | `EMBEDDER_REGISTRY` | `input` (AF2-style), `esm` (ESM-2 LM) |
+
+Three workflows are supported:
+
+- **Registry lookup** — build components by name and wire them together
+- **Module swapping** — patch components inside pre-trained models at runtime without losing weights
+- **Model building** — compose custom architectures declaratively with `ModelBuilder`
+
+```python
+# Swap attention in a pre-trained OpenFold
+from molfun.modules.attention import FlashAttention
+model.swap_all(
+    pattern=r"msa_att",
+    factory=lambda name, old: FlashAttention(num_heads=8, head_dim=32),
+)
+
+# Or build a custom architecture from scratch
+from molfun.modules.builder import ModelBuilder
+built = ModelBuilder(
+    embedder="input",
+    block="pairformer",
+    block_config={"d_single": 256, "d_pair": 128, "attention_cls": "flash"},
+    n_blocks=24,
+    structure_module="ipa",
+).build()
+model = MolfunStructureModel.from_custom(built, head="affinity",
+                                          head_config={"single_dim": 256})
+```
+
+See [docs/modules.md](docs/modules.md) for the full modular architecture guide with tutorials and examples.
+
+### 3. GPU Kernels
+
+Molfun provides Triton GPU kernels for geometric primitives that molecular ML pipelines depend on:
 
 | Kernel | Speedup vs CPU | Notes |
 |--------|---------------|-------|
@@ -62,11 +112,7 @@ Molfun provides Triton GPU kernels for the geometric primitives that molecular M
 | **Contact Maps** (bit-packed) | 45x vs MDAnalysis, 36x vs MDTraj | 8x less memory than boolean matrices |
 | **Pairwise Distances** | GPU-native | Foundation for contact maps and graph construction |
 
-These kernels are used both in analysis workflows and as building blocks for ML feature computation (contact maps for attention masks, distance features for geometric constraints, etc.).
-
-### 3. MD Analysis
-
-The `molfun.analysis` module provides a GPU-accelerated interface for molecular dynamics trajectory analysis. It loads trajectories (DCD, XTC, etc.), transfers coordinates to GPU, and runs all analysis with Triton kernels — avoiding the CPU bottleneck that makes tools like MDAnalysis slow on large trajectories.
+Additional Triton kernels for model internals: fused LayerNorm, GELU, fused linear+bias+residual.
 
 ### 4. Pluggable Loss Registry
 
@@ -75,18 +121,15 @@ Losses are first-class objects registered by name and fully decoupled from heads
 ```python
 from molfun.losses import LOSS_REGISTRY
 
-# Use a built-in loss:
 loss_fn = LOSS_REGISTRY["huber"]()
-result  = loss_fn(preds, targets)   # {"affinity_loss": tensor}
+result  = loss_fn(preds, targets)
 
-# Register a custom loss and use it immediately in training:
+# Register a custom loss:
 from molfun.losses import LossFunction
 
 @LOSS_REGISTRY.register("tmscore")
 class TMScoreLoss(LossFunction):
     def forward(self, preds, targets=None, batch=None): ...
-
-strategy = LoRAFinetune(rank=8, loss_fn="tmscore")
 ```
 
 Built-in losses: `mse`, `mae`, `huber`, `pearson` (affinity) · `openfold` (FAPE + auxiliary structure losses).
@@ -98,9 +141,13 @@ A complete data pipeline for protein fine-tuning tasks:
 - **PDBFetcher** — download structures from RCSB
 - **AffinityFetcher** — parse PDBbind index files or CSV datasets
 - **MSAProvider** — generate or load pre-computed MSAs (single-sequence, A3M, or MMseqs2)
-- **OpenFoldFeaturizer** — convert PDB/mmCIF files to full OpenFold feature dicts (including ground truth coordinates for structure fine-tuning)
+- **OpenFoldFeaturizer** — convert PDB/mmCIF files to full OpenFold feature dicts
 - **StructureDataset / AffinityDataset** — PyTorch datasets with on-the-fly or pre-computed features
-- **DataSplitter** — random, temporal, sequence-identity, or family-based splits (the latter two prevent data leakage from homologous sequences)
+- **DataSplitter** — random, temporal, sequence-identity, or family-based splits
+
+### 6. MD Analysis
+
+The `molfun.analysis` module provides a GPU-accelerated interface for molecular dynamics trajectory analysis. It loads trajectories (DCD, XTC, etc.), transfers coordinates to GPU, and runs all analysis with Triton kernels.
 
 ---
 
@@ -123,6 +170,14 @@ Adding a new model requires implementing `BaseAdapter` (forward, freeze/unfreeze
 molfun/
 ├── models/          # MolfunStructureModel — unified model wrapper
 ├── adapters/        # Backend adapters (OpenFold, future: ESMFold, ...)
+├── modules/         # Pluggable components for research
+│   ├── attention/   #   Standard, Flash, Linear, Gated attention
+│   ├── blocks/      #   Evoformer, Pairformer, SimpleTransformer
+│   ├── structure_module/  # IPA, Diffusion
+│   ├── embedders/   #   Input (AF2-style), ESM (ESM-2 LM)
+│   ├── registry.py  #   Generic module registry
+│   ├── swapper.py   #   Runtime module replacement
+│   └── builder.py   #   Declarative model composition
 ├── training/        # Fine-tuning strategies (HeadOnly, LoRA, Partial, Full)
 ├── peft/            # LoRA / IA3 injection (builtin + HuggingFace PEFT)
 ├── heads/           # Task heads (AffinityHead, StructureLossHead, ...)
@@ -132,10 +187,9 @@ molfun/
 ├── data/            # Datasets, data sources, splits, MSA handling
 ├── kernels/         # Triton GPU kernels (RMSD, contact maps, distances, ...)
 ├── analysis/        # MD trajectory analysis (GPU-accelerated)
-├── cli/             # CLI entry point (molfun structure / affinity / info)
-└── api/             # FastAPI backend (dashboard integration)
+└── cli/             # CLI entry point (molfun structure / affinity / info)
 
-docs/                # Guides (docs/openfold/run.md)
+docs/                # Guides and tutorials
 tests/               # Unit + GPU integration tests
 ```
 
@@ -180,6 +234,7 @@ OpenFold  : installed
 Losses    : huber, mae, mse, openfold, pearson
 Heads     : affinity, structure
 Strategies: lora, partial, full, head_only
+Modules   : 4 attention, 3 blocks, 2 structure_modules, 2 embedders
 ```
 
 ### Fine-Tune on Protein Structures (no labels needed)
@@ -221,7 +276,39 @@ strategy = LoRAFinetune(rank=8, lr_lora=1e-4, lr_head=1e-3, ema_decay=0.999)
 history = model.fit(train_loader, val_loader, strategy=strategy, epochs=30)
 ```
 
-See [docs/openfold/run.md](docs/openfold/run.md) for the full production guide with hyperparameter recommendations, strategy selection, and deployment instructions.
+### Build a Custom Architecture
+
+```python
+from molfun.modules.builder import ModelBuilder
+from molfun.models.structure import MolfunStructureModel
+
+built = ModelBuilder(
+    embedder="input",
+    embedder_config={"d_single": 256, "d_pair": 128, "d_msa": 256},
+    block="pairformer",
+    block_config={"d_single": 256, "d_pair": 128, "attention_cls": "flash"},
+    n_blocks=12,
+    structure_module="ipa",
+    structure_module_config={"d_single": 256, "d_pair": 128},
+).build()
+
+model = MolfunStructureModel.from_custom(
+    built, head="affinity", head_config={"single_dim": 256},
+)
+strategy = LoRAFinetune(rank=8, lr_lora=1e-4, lr_head=1e-3)
+history = model.fit(train_loader, val_loader, strategy=strategy, epochs=20)
+```
+
+See [docs/openfold/run.md](docs/openfold/run.md) for the full production fine-tuning guide and [docs/modules.md](docs/modules.md) for the modular architecture tutorial.
+
+---
+
+## Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [docs/openfold/run.md](docs/openfold/run.md) | Production fine-tuning guide: strategies, hyperparameters, checkpointing |
+| [docs/modules.md](docs/modules.md) | Modular architecture tutorial: registries, swapping, building, custom modules |
 
 ---
 
@@ -258,22 +345,25 @@ All four strategies verified with gradient flow tests on real OpenFold (93M para
 ## Tests
 
 ```bash
-# Full test suite (111 tests: data pipeline, kernels, models, training strategies)
+# Full test suite
 python -m pytest tests/ -v
 
-# Just the fine-tuning tests (mock + real GPU)
+# Fine-tuning tests (mock + real GPU)
 python -m pytest tests/training/ tests/models/ -v
+
+# Module tests (attention, blocks, builder, swapper)
+python -m pytest tests/modules/ -v
 ```
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+Apache 2.0 — see [LICENSE](./LICENSE).
 
 ## Citation
 
 ```bibtex
 @software{molfun,
-  title  = {Molfun: Fine-Tuning & GPU Acceleration for Molecular ML},
+  title  = {Molfun: Fine-Tuning \& Modular Architecture for Molecular ML},
   author = {Rubén Cañadas},
   year   = {2026},
   url    = {https://github.com/rubencr14/molfun/}

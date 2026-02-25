@@ -1,53 +1,39 @@
-.PHONY: help api kill-api install-api run-api kill-frontend frontend install-frontend dev test test-cov install-test
+.PHONY: help install install-dev install-test test test-cov test-modules test-training test-kernels lint
 
-# Variables
-API_PORT := 8000
-FRONTEND_PORT := 3000
-API_DIR := molfun/api
-FRONTEND_DIR := frontend
+help: ## Show available commands
+	@echo "Available commands:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-help: ## Muestra esta ayuda
-	@echo "Comandos disponibles:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+install: ## Install molfun in editable mode
+	pip install -e .
 
-kill-api: ## Mata cualquier proceso en el puerto 8000
-	@echo "Buscando procesos en el puerto $(API_PORT)..."
-	@lsof -ti:$(API_PORT) | xargs -r kill -9 2>/dev/null || echo "No hay procesos en el puerto $(API_PORT)"
-	@echo "Puerto $(API_PORT) liberado"
+install-dev: ## Install molfun with dev dependencies
+	pip install -e ".[dev]"
 
-install-api: ## Instala dependencias de la API
-	@echo "Instalando dependencias de la API..."
-	pip install -r $(API_DIR)/requirements.txt
+install-test: ## Install test dependencies
+	pip install -r requirements-test.txt
 
-run-api: kill-api ## Levanta la API FastAPI (mata procesos existentes primero)
-	@echo "Iniciando API en puerto $(API_PORT)..."
-	cd $(API_DIR) && python -m uvicorn main:app --reload --host 0.0.0.0 --port $(API_PORT)
-
-api: run-api ## Alias para run-api
-
-install-frontend: ## Instala dependencias del frontend
-	@echo "Instalando dependencias del frontend..."
-	cd $(FRONTEND_DIR) && npm install
-
-kill-frontend: ## Mata cualquier proceso en el puerto 3000
-	@echo "Buscando procesos en el puerto $(FRONTEND_PORT)..."
-	@lsof -ti:$(FRONTEND_PORT) | xargs -r kill -9 2>/dev/null || echo "No hay procesos en el puerto $(FRONTEND_PORT)"
-	@echo "Puerto $(FRONTEND_PORT) liberado"
-
-frontend: kill-frontend ## Levanta el frontend Next.js (mata procesos existentes primero)
-	@echo "Iniciando frontend en puerto $(FRONTEND_PORT)..."
-	cd $(FRONTEND_DIR) && npm run dev
-
-dev: api frontend ## Levanta tanto la API como el frontend (en paralelo)
-
-test: ## Ejecuta los tests
-	@echo "Ejecutando tests..."
+test: ## Run full test suite
+	@echo "Running full test suite..."
 	pytest tests/ -v
 
-test-cov: ## Ejecuta los tests con coverage
-	@echo "Ejecutando tests con coverage..."
+test-cov: ## Run tests with coverage report
+	@echo "Running tests with coverage..."
 	pytest tests/ --cov=molfun --cov-report=html --cov-report=term
 
-install-test: ## Instala dependencias de testing
-	@echo "Instalando dependencias de testing..."
-	pip install -r requirements-test.txt
+test-modules: ## Run modular architecture tests (attention, blocks, builder, swapper)
+	@echo "Running module tests..."
+	pytest tests/modules/ -v
+
+test-training: ## Run training strategy tests
+	@echo "Running training tests..."
+	pytest tests/training/ tests/models/ -v
+
+test-kernels: ## Run GPU kernel tests
+	@echo "Running kernel tests..."
+	pytest tests/kernels/ -v
+
+lint: ## Run linter checks
+	@echo "Running linters..."
+	python -m py_compile molfun/__init__.py
+	python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1

@@ -1,60 +1,70 @@
 # Contributing
 
-This repository is a performance engineering sandbox for Triton kernels, model patching, and reproducible inference benchmarks across protein and structure ML models (e.g., ESM, AlphaFold-like stacks, Protenix, DiffDock). Contributions are welcome, but performance work is easy to regress unintentionally. Please follow the guidelines below so changes remain measurable, reproducible, and reviewable.
+Molfun is a framework for fine-tuning molecular ML models, building modular protein architectures, and GPU-accelerated molecular analysis. Contributions are welcome across all areas of the project.
 
 ## Scope of Contributions
 
 We accept contributions in these areas:
 
-- Triton kernels (new fused primitives, improvements to existing kernels, autotuning/config updates)
-- Model integration and patching utilities (clean, reversible patching of forward paths)
-- Benchmarks and harness improvements (timing stability, new representative test cases, reporting)
-- Correctness and validation tooling (numerical comparisons, tolerance guidelines, diagnostics)
-- Documentation (kernel design notes, integration notes, benchmarking methodology)
+- **Model adapters** — new backend integrations (ESMFold, Protenix, docking models)
+- **Modular components** — new attention mechanisms, blocks, structure modules, embedders
+- **Training strategies** — new fine-tuning approaches, schedulers, regularization techniques
+- **Data pipeline** — new data sources, featurizers, splitting strategies
+- **GPU kernels** — Triton kernels for geometric primitives and model internals
+- **Benchmarks** — training benchmarks, kernel performance, architecture comparisons
+- **Tests** — unit tests, integration tests, GPU validation
+- **Documentation** — guides, tutorials, API documentation
 
 If you are proposing a large change, open an issue first describing:
-- what you want to speed up
-- target models and shapes
-- expected impact and why
-- how you will measure and validate
+- what you want to add or change
+- the motivation and expected impact
+- how you will validate it
 
 ## Development Principles
 
-1. Measure first. Do not assume a kernel is faster without a benchmark and (ideally) a profile.
-2. Keep patches reversible. Any runtime patching must have a clean unpatch path.
-3. Prefer minimal behavioral changes. We optimize inference paths; avoid changing model semantics.
-4. Correctness matters. Performance improvements must include output-difference checks.
-5. Keep kernels readable. Favor clear pointer arithmetic, masking, and tile definitions over clever hacks.
+1. **Interfaces first.** New components should implement the relevant abstract base class (`BaseAttention`, `BaseBlock`, `BaseStructureModule`, `BaseEmbedder`, `BaseAdapter`) and register themselves in the appropriate registry.
+2. **Keep things swappable.** Design components so they can be substituted at runtime without modifying other parts of the model.
+3. **Measure first.** Performance claims should be backed by benchmarks. Architecture comparisons should include controlled experiments.
+4. **Correctness matters.** Include tests for new components — at minimum shape checks and gradient flow validation.
+5. **Backward compatible.** Changes to existing interfaces should not break existing adapters, strategies, or modules.
 
 ## Repository Conventions
+
+### Modular components
+
+- Place new attention implementations in `molfun/modules/attention/`.
+- Place new blocks in `molfun/modules/blocks/`.
+- Place new structure modules in `molfun/modules/structure_module/`.
+- Place new embedders in `molfun/modules/embedders/`.
+- Register every new component using `@REGISTRY.register("name")`.
+- Implement the full abstract interface (all abstract methods and properties).
+- Add tests in `tests/modules/`.
+
+### Model adapters
+
+- Place new adapters in `molfun/adapters/`.
+- Implement `BaseAdapter`: `forward()`, `freeze_trunk()`, `unfreeze_trunk()`, `peft_target_module`, `get_evoformer_blocks()`.
+- Register the adapter so it's accessible via `MolfunStructureModel("name", ...)`.
+
+### Training strategies
+
+- Place new strategies in `molfun/training/`.
+- Extend `FinetuneStrategy` from `molfun/training/base.py`.
+- Include proper parameter group setup with differential learning rates.
 
 ### Kernel code
 
 - Place Triton kernels in `molfun/kernels/`.
-- Provide a small Python wrapper per kernel that validates shapes/dtypes and handles reshaping.
-- Accumulate in fp32 where it improves stability (mean/var, GEMM accumulation) unless justified.
-- Support fp16 and bf16 where reasonable. If a kernel is fp16-only, document it clearly.
-- Use masks for boundary handling and avoid out-of-bounds loads/stores.
-- If using autotune, keep the initial config set small and safe; expand only with evidence.
-
-### Patching code
-
-- Patches should be narrowly scoped and avoid global side effects.
-- Store original callables and restore them exactly in `unpatch_*`.
-- Do not reallocate or concatenate weights inside the hot forward path.
-  - If you need packed weights (e.g., fused QKV), create them once and cache them on the module.
+- Provide a Python wrapper per kernel that validates shapes/dtypes.
+- Accumulate in fp32 where it improves stability.
+- Use masks for boundary handling.
 
 ### Benchmarks
 
 - Benchmarks live in `molfun/benchmarks/`.
 - Use deterministic synthetic inputs unless there is a specific need for real data.
 - Use CUDA events for timing and include warmup iterations.
-- Always report:
-  - baseline time
-  - patched time
-  - speedup
-  - tokens/s (or another throughput metric)
-  - max/mean abs diff (or other relevant error metrics)
+- Report baseline, optimized, speedup, and correctness metrics.
 
 ## How to Submit a Change
 
@@ -62,65 +72,33 @@ If you are proposing a large change, open an issue first describing:
 2. Keep commits focused (one topic per PR where possible).
 3. Include:
    - a clear description of the change
-   - target workloads and shapes
-   - benchmark results before/after
-   - correctness check results
+   - tests covering the new functionality
+   - benchmark results if claiming performance improvement
 4. Open a pull request.
 
 ## Required Evidence for Performance PRs
 
 For any change claiming performance improvement, include:
 
-- A benchmark command (or script) and exact settings:
-  - model id / architecture
-  - batch size, sequence length (or other shape parameters)
-  - dtype (fp16/bf16)
-  - iterations, warmup
-- Before/after numbers:
-  - ms/iter and tokens/s
-  - speedup
-- Correctness deltas:
-  - max abs diff, mean abs diff (or similar)
-- If the change is non-trivial, include a profile:
-  - Nsight Systems (`nsys`) trace summary is usually sufficient
-
-Example reporting format:
-
-- Hardware: GPU model, driver/CUDA version
-- Software: PyTorch version, Triton version, Transformers version
-- Benchmark: script name, cases
-- Baseline: ms/iter, tokens/s
-- Patched: ms/iter, tokens/s
-- Diff: max abs, mean abs
-- Notes: what changed, why it should be faster
-
-## Correctness Guidelines
-
-This repository focuses on inference. Fused kernels may introduce small numerical differences due to:
-- fp16/bf16 arithmetic
-- different accumulation order
-- fused epilogues changing rounding behavior
-- alternative activation approximations
-
-When adding or modifying kernels:
-- Keep default behavior consistent with reference implementations unless explicitly documented.
-- If you introduce an approximation (e.g., tanh GELU), document it and update tests/bench tolerances.
-- Prefer comparing the final `last_hidden_state` (or equivalent output) for integration benchmarks.
+- Benchmark command/script and exact settings (model, shapes, dtype, iterations)
+- Before/after numbers (ms/iter, speedup)
+- Correctness deltas (max abs diff, mean abs diff)
+- Hardware and software versions (GPU, CUDA, PyTorch, Triton)
 
 ## Style and Quality
 
-- Use clear naming: `fused_*_kernel` for Triton kernels, `*_triton(...)` for wrappers.
-- Add concise comments explaining tiling, pointer arithmetic, and masking.
-- Avoid unnecessary dependencies.
-- Keep Python code compatible with typical PyTorch/Transformers usage patterns.
+- Follow existing naming conventions in each subpackage.
+- Add docstrings to public classes and methods.
+- Avoid unnecessary dependencies — core functionality should work with just PyTorch.
+- Optional backends (OpenFold, ESM, Triton, HuggingFace PEFT) are guarded by try/except imports.
 
 ## Reporting Bugs
 
 If you find a correctness issue or crash:
-- Include the smallest reproducible snippet or the benchmark script and exact parameters.
+- Include the smallest reproducible snippet.
 - Include hardware and software versions.
-- If it is a Triton compilation issue, include the error log and the kernel configuration if available.
+- Include the full error traceback.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the repository’s Apache License 2.0.
+By contributing, you agree that your contributions will be licensed under the repository's Apache License 2.0.
