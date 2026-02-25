@@ -29,6 +29,18 @@ setup(
         "peft": [
             "peft>=0.6.0",
         ],
+        "agents": [
+            "openai>=1.0.0",
+        ],
+        "agents-anthropic": [
+            "anthropic>=0.20.0",
+        ],
+        "agents-ollama": [
+            "ollama>=0.1.0",
+        ],
+        "agents-litellm": [
+            "litellm>=1.0.0",
+        ],
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
