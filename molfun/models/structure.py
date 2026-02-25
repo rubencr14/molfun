@@ -41,7 +41,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from molfun.adapters.base import BaseAdapter
-from molfun.peft.lora import MolfunPEFT
+from molfun.training.peft import MolfunPEFT
 from molfun.heads.affinity import AffinityHead
 from molfun.heads.structure import StructureLossHead
 from molfun.core.types import TrunkOutput

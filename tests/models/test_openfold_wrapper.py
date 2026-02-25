@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from molfun.models.structure import MolfunStructureModel
 from molfun.models.openfold import OpenFold
 from molfun.adapters.openfold import OpenFoldAdapter
-from molfun.peft.lora import MolfunPEFT, LoRALinear
+from molfun.training.peft import MolfunPEFT, LoRALinear
 from molfun.heads.affinity import AffinityHead
 from molfun.training import HeadOnlyFinetune, LoRAFinetune
 from molfun.core.types import TrunkOutput

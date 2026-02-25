@@ -8,7 +8,7 @@ we just add trainable LoRA parameters on top.
 from __future__ import annotations
 from typing import Optional
 from molfun.training.head_only import HeadOnlyFinetune
-from molfun.peft.lora import MolfunPEFT
+from molfun.training.peft import MolfunPEFT
 
 
 class LoRAFinetune(HeadOnlyFinetune):
