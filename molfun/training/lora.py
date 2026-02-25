@@ -15,10 +15,15 @@ class LoRAFinetune(HeadOnlyFinetune):
     """
     Freeze trunk, inject LoRA into attention layers, train LoRA + head.
 
-    Usage:
+    When ``target_modules`` is None, the adapter's ``default_peft_targets``
+    is used — each adapter knows the naming convention of its own attention
+    projections (OpenFold: ``linear_q/linear_v``, Protenix: ``q_proj/v_proj``,
+    etc.). This makes LoRA work out of the box with any registered adapter.
+
+    Usage::
+
         strategy = LoRAFinetune(
             rank=8, alpha=16.0,
-            target_modules=["linear_q", "linear_v"],
             lr_head=1e-3, lr_lora=1e-4,
             warmup_steps=200, ema_decay=0.999,
             accumulation_steps=4,
@@ -44,23 +49,40 @@ class LoRAFinetune(HeadOnlyFinetune):
         self.rank = rank
         self.alpha = alpha
         self.dropout = dropout
-        self.target_modules = target_modules or ["linear_q", "linear_v"]
+        self._target_modules_override = target_modules
         self.use_hf = use_hf
         self.lr_head = lr_head or self.lr
         self.lr_lora = lr_lora or self.lr
 
+    def _resolve_target_modules(self, model) -> list[str]:
+        """Resolve target modules: explicit override > adapter defaults > fallback."""
+        if self._target_modules_override is not None:
+            return self._target_modules_override
+
+        defaults = model.adapter.default_peft_targets
+        if defaults:
+            return defaults
+
+        return ["linear_q", "linear_v"]
+
     def _setup_impl(self, model) -> None:
         super()._setup_impl(model)
+
+        target_modules = self._resolve_target_modules(model)
 
         peft = MolfunPEFT.lora(
             rank=self.rank,
             alpha=self.alpha,
             dropout=self.dropout,
-            target_modules=self.target_modules,
+            target_modules=target_modules,
             use_hf=self.use_hf,
         )
         peft.apply(model.adapter.peft_target_module)
         model._peft = peft
+
+    @property
+    def target_modules(self) -> Optional[list[str]]:
+        return self._target_modules_override
 
     def param_groups(self, model) -> list[dict]:
         if model.head is None:
@@ -81,7 +103,7 @@ class LoRAFinetune(HeadOnlyFinetune):
         d.update({
             "rank": self.rank,
             "alpha": self.alpha,
-            "target_modules": self.target_modules,
+            "target_modules": self._target_modules_override,
             "lr_head": self.lr_head,
             "lr_lora": self.lr_lora,
         })

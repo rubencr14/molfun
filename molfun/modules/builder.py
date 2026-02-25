@@ -203,8 +203,18 @@ class BuiltModel(BaseAdapter):
     def peft_target_module(self) -> nn.Module:
         return self.blocks
 
-    def get_evoformer_blocks(self) -> nn.ModuleList:
+    def get_trunk_blocks(self) -> nn.ModuleList:
         return self.blocks
+
+    def get_structure_module(self):
+        return self.structure_module
+
+    def get_input_embedder(self):
+        return self.embedder
+
+    @property
+    def default_peft_targets(self) -> list[str]:
+        return ["q_proj", "v_proj"]
 
     def param_summary(self) -> dict[str, int]:
         total = sum(p.numel() for p in self.parameters())

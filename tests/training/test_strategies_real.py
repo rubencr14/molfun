@@ -25,7 +25,7 @@ from molfun.training import (
     PartialFinetune,
     FullFinetune,
 )
-from molfun.training.base import _unpack_batch, _to_device
+from molfun.helpers.training import unpack_batch as _unpack_batch, to_device as _to_device
 
 WEIGHTS_PATH = Path.home() / ".molfun" / "weights" / "finetuning_ptm_2.pt"
 
@@ -196,7 +196,7 @@ class TestPartialReal:
         strategy = PartialFinetune(unfreeze_last_n=4, amp=False)
         strategy.setup(model)
 
-        blocks = model.adapter.get_evoformer_blocks()
+        blocks = model.adapter.get_trunk_blocks()
         for p in blocks[0].parameters():
             assert not p.requires_grad
         for p in blocks[-1].parameters():

@@ -136,9 +136,23 @@ class OpenFoldAdapter(BaseAdapter):
 
         return modules
 
-    def get_evoformer_blocks(self) -> nn.ModuleList:
-        """Direct access to evoformer blocks for fine-grained PEFT targeting."""
+    def get_trunk_blocks(self) -> nn.ModuleList:
+        """Evoformer blocks — the main repeating units of the trunk."""
         return self.model.evoformer.blocks
+
+    def get_evoformer_blocks(self) -> nn.ModuleList:
+        """Deprecated: use get_trunk_blocks() instead."""
+        return self.get_trunk_blocks()
+
+    def get_structure_module(self):
+        return getattr(self.model, self.STRUCTURE_MODULE_KEY, None)
+
+    def get_input_embedder(self):
+        return getattr(self.model, self.INPUT_EMBEDDER_KEY, None)
+
+    @property
+    def default_peft_targets(self) -> list[str]:
+        return ["linear_q", "linear_v"]
 
     # ------------------------------------------------------------------
     # Freeze / unfreeze

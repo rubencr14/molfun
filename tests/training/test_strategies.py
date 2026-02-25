@@ -22,7 +22,7 @@ from molfun.training import (
 )
 
 
-# ── Mock model ────────────────────────────────────────────────────────
+# -- Mock model ────────────────────────────────────────────────────────
 
 class _MockEvoformerBlock(nn.Module):
     def __init__(self, dim: int):
@@ -89,7 +89,7 @@ def _make_loader(n: int = 8, batch_size: int = 2) -> DataLoader:
     return DataLoader(ds, batch_size=batch_size)
 
 
-# ── EMA tests ─────────────────────────────────────────────────────────
+# -- EMA tests ─────────────────────────────────────────────────────────
 
 class TestEMA:
 
@@ -125,7 +125,7 @@ class TestEMA:
         assert len(state["shadow"]) == 1
 
 
-# ── Scheduler tests ───────────────────────────────────────────────────
+# -- Scheduler tests ───────────────────────────────────────────────────
 
 class TestScheduler:
 
@@ -176,7 +176,7 @@ class TestScheduler:
         assert opt.param_groups[0]["lr"] < 0.05
 
 
-# ── HeadOnly strategy ─────────────────────────────────────────────────
+# -- HeadOnly strategy ─────────────────────────────────────────────────
 
 class TestHeadOnlyFinetune:
 
@@ -185,7 +185,7 @@ class TestHeadOnlyFinetune:
         strategy = HeadOnlyFinetune(lr=1e-3)
         strategy.setup(model)
 
-        for p in model.adapter.model.parameters():
+        for p in model.adapter.parameters():
             assert not p.requires_grad
 
     def test_head_trainable(self):
@@ -222,7 +222,7 @@ class TestHeadOnlyFinetune:
         assert d["ema_decay"] == 0.99
 
 
-# ── LoRA strategy ─────────────────────────────────────────────────────
+# -- LoRA strategy ─────────────────────────────────────────────────────
 
 class TestLoRAFinetune:
 
@@ -236,6 +236,13 @@ class TestLoRAFinetune:
         )
         strategy.setup(model)
 
+        assert model._peft is not None
+        assert model._peft.trainable_param_count() > 0
+
+    def test_uses_adapter_defaults_when_no_targets(self):
+        model = _make_model()
+        strategy = LoRAFinetune(rank=4, use_hf=False)
+        strategy.setup(model)
         assert model._peft is not None
         assert model._peft.trainable_param_count() > 0
 
@@ -285,7 +292,7 @@ class TestLoRAFinetune:
         assert d["lr_lora"] == 5e-5
 
 
-# ── Partial strategy ──────────────────────────────────────────────────
+# -- Partial strategy ──────────────────────────────────────────────────
 
 class TestPartialFinetune:
 
@@ -294,13 +301,11 @@ class TestPartialFinetune:
         strategy = PartialFinetune(unfreeze_last_n=2)
         strategy.setup(model)
 
-        blocks = model.adapter.get_evoformer_blocks()
-        # First 2 blocks frozen
+        blocks = model.adapter.get_trunk_blocks()
         for p in blocks[0].parameters():
             assert not p.requires_grad
         for p in blocks[1].parameters():
             assert not p.requires_grad
-        # Last 2 blocks trainable
         for p in blocks[2].parameters():
             assert p.requires_grad
         for p in blocks[3].parameters():
@@ -311,7 +316,7 @@ class TestPartialFinetune:
         strategy = PartialFinetune(unfreeze_last_n=1, unfreeze_structure_module=True)
         strategy.setup(model)
 
-        sm = model.adapter.model.structure_module
+        sm = model.adapter.get_structure_module()
         for p in sm.parameters():
             assert p.requires_grad
 
@@ -346,7 +351,7 @@ class TestPartialFinetune:
         assert d["lr_trunk"] == 1e-5
 
 
-# ── Full strategy ─────────────────────────────────────────────────────
+# -- Full strategy ─────────────────────────────────────────────────────
 
 class TestFullFinetune:
 
@@ -355,7 +360,7 @@ class TestFullFinetune:
         strategy = FullFinetune(lr=1e-5)
         strategy.setup(model)
 
-        frozen = sum(1 for p in model.adapter.model.parameters() if not p.requires_grad)
+        frozen = sum(1 for p in model.adapter.parameters() if not p.requires_grad)
         assert frozen == 0
 
     def test_layer_wise_lr_decay(self):
@@ -364,14 +369,21 @@ class TestFullFinetune:
         strategy.setup(model)
         groups = strategy.param_groups(model)
 
-        # Should have: embedder + 4 blocks + structure_module + remaining + head
         lrs = [g["lr"] for g in groups]
-        # Head (last) should have highest LR
         assert lrs[-1] == 1e-3
-        # Block LRs should increase (later blocks = higher LR)
-        block_lrs = lrs[1:5]  # 4 evoformer blocks
+        block_lrs = lrs[1:5]  # 4 trunk blocks
         for i in range(len(block_lrs) - 1):
             assert block_lrs[i] < block_lrs[i + 1]
+
+    def test_embedder_lr_scales_with_n_blocks(self):
+        model = _make_model()
+        strategy = FullFinetune(lr=1e-4, layer_lr_decay=0.9)
+        strategy.setup(model)
+        groups = strategy.param_groups(model)
+
+        n_blocks = len(model.adapter.get_trunk_blocks())
+        expected_emb_lr = 1e-4 * 0.9 ** n_blocks
+        assert groups[0]["lr"] == pytest.approx(expected_emb_lr)
 
     def test_fit_runs(self):
         model = _make_model()
@@ -392,7 +404,7 @@ class TestFullFinetune:
         assert d["lr_head"] == 1e-3
 
 
-# ── Early stopping ────────────────────────────────────────────────────
+# -- Early stopping ────────────────────────────────────────────────────
 
 class TestEarlyStopping:
 
@@ -404,13 +416,12 @@ class TestEarlyStopping:
 
         history = strategy.fit(model, train_loader, val_loader, epochs=50)
 
-        # Should stop well before 50 epochs if val doesn't improve
         assert len(history) <= 50
         if len(history) > 2:
             assert history[-1].get("patience", 0) >= 2 or len(history) == 50
 
 
-# ── Validation with EMA ──────────────────────────────────────────────
+# -- Validation with EMA ──────────────────────────────────────────────
 
 class TestEMAValidation:
 

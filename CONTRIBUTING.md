@@ -43,7 +43,7 @@ If you are proposing a large change, open an issue first describing:
 ### Model adapters
 
 - Place new adapters in `molfun/adapters/`.
-- Implement `BaseAdapter`: `forward()`, `freeze_trunk()`, `unfreeze_trunk()`, `peft_target_module`, `get_evoformer_blocks()`.
+- Implement `BaseAdapter`: `forward()`, `freeze_trunk()`, `unfreeze_trunk()`, `get_trunk_blocks()`, `peft_target_module`, `default_peft_targets`, and optionally `get_structure_module()`, `get_input_embedder()`.
 - Register the adapter so it's accessible via `MolfunStructureModel("name", ...)`.
 
 ### Training strategies
