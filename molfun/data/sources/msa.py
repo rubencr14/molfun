@@ -17,6 +17,8 @@ import urllib.error
 
 import torch
 
+from molfun.data.storage import open_path, exists, ensure_dir
+
 _COLABFOLD_API = "https://api.colabfold.com"
 
 _AA_TO_IDX = {
@@ -49,12 +51,14 @@ class MSAProvider:
         backend: str = "precomputed",
         msa_dir: Optional[str] = None,
         max_msa_depth: int = 512,
+        storage_options: Optional[dict] = None,
     ):
         if backend not in ("precomputed", "colabfold", "single"):
             raise ValueError(f"Unknown backend: {backend}. Use 'precomputed', 'colabfold', or 'single'.")
         self.backend = backend
-        self.msa_dir = Path(msa_dir) if msa_dir else Path.home() / ".molfun" / "msa_cache"
-        self.msa_dir.mkdir(parents=True, exist_ok=True)
+        self.msa_dir = str(msa_dir) if msa_dir else str(Path.home() / ".molfun" / "msa_cache")
+        self.storage_options = storage_options
+        ensure_dir(self.msa_dir, storage_options=storage_options)
         self.max_msa_depth = max_msa_depth
 
     def get(self, sequence: str, pdb_id: str) -> dict:
@@ -129,15 +133,15 @@ class MSAProvider:
         raise TimeoutError(f"ColabFold MSA search timed out for ticket {ticket_id}")
 
     def _load_a3m(self, pdb_id: str) -> str:
-        """Load pre-computed A3M from disk."""
+        """Load pre-computed A3M from local or remote storage."""
         for ext in (".a3m", ".a3m.gz"):
-            path = self.msa_dir / f"{pdb_id}{ext}"
-            if path.exists():
+            path = f"{self.msa_dir}/{pdb_id}{ext}"
+            if exists(path, self.storage_options):
                 if ext.endswith(".gz"):
-                    import gzip
-                    with gzip.open(path, "rt") as f:
-                        return f.read()
-                with open(path) as f:
+                    import gzip, io
+                    with open_path(path, "rb", self.storage_options) as f:
+                        return gzip.decompress(f.read()).decode()
+                with open_path(path, "r", self.storage_options) as f:
                     return f.read()
         raise FileNotFoundError(
             f"No A3M file for '{pdb_id}' in {self.msa_dir}. "
@@ -215,14 +219,22 @@ class MSAProvider:
     # Cache
     # ------------------------------------------------------------------
 
-    def _cache_path(self, pdb_id: str) -> Path:
-        return self.msa_dir / f"{pdb_id}.msa.pt"
+    def _cache_path(self, pdb_id: str) -> str:
+        return f"{self.msa_dir}/{pdb_id}.msa.pt"
 
     def _load_cached(self, pdb_id: str) -> Optional[dict]:
         path = self._cache_path(pdb_id)
-        if path.exists():
-            return torch.load(path, map_location="cpu", weights_only=True)
+        if exists(path, self.storage_options):
+            with open_path(path, "rb", self.storage_options) as f:
+                import io
+                buf = io.BytesIO(f.read())
+                return torch.load(buf, map_location="cpu", weights_only=True)
         return None
 
     def _save_cached(self, pdb_id: str, features: dict) -> None:
-        torch.save(features, self._cache_path(pdb_id))
+        import io
+        buf = io.BytesIO()
+        torch.save(features, buf)
+        buf.seek(0)
+        with open_path(self._cache_path(pdb_id), "wb", self.storage_options) as f:
+            f.write(buf.read())

@@ -16,6 +16,7 @@ import logging
 from molfun.agents.llm.base import BaseLLM, LLMResponse
 from molfun.agents.tools import MolfunTools
 from molfun.agents.memory import ExperimentMemory
+from molfun.tracking.base import BaseTracker
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +54,13 @@ class BaseAgent(ABC):
         tools: MolfunTools,
         memory: Optional[ExperimentMemory] = None,
         config: Optional[AgentConfig] = None,
+        tracker: Optional[BaseTracker] = None,
     ):
         self.llm = llm
         self.tools = tools
         self.memory = memory or ExperimentMemory()
         self.config = config or AgentConfig()
+        self.tracker = tracker
 
     @abstractmethod
     def system_prompt(self) -> str:
@@ -89,6 +92,14 @@ class BaseAgent(ABC):
         self._log(f"LLM: {self.llm}")
         self._log(f"Max steps: {self.config.max_steps}")
         self._log("")
+
+        if self.tracker is not None:
+            self.tracker.start_run(
+                name=f"agent-{type(self).__name__}",
+                tags=["agent"],
+                config={"objective": objective, "llm": str(self.llm),
+                        "max_steps": self.config.max_steps},
+            )
 
         while step < self.config.max_steps:
             step += 1
@@ -151,6 +162,12 @@ class BaseAgent(ABC):
                     exp = self.tools.get_last_experiment()
                     if exp is not None:
                         self.memory.log_experiment(exp)
+                        if self.tracker is not None:
+                            self.tracker.log_metrics({
+                                "experiment_count": self.memory.count,
+                                **({"best_val_loss": exp.best_val_loss}
+                                   if exp.best_val_loss is not None else {}),
+                            }, step=self.memory.count)
                         self.tools.clear_last_experiment()
 
             elif response.text:
@@ -163,6 +180,14 @@ class BaseAgent(ABC):
                 messages = self._compact_messages(messages)
 
         self._log_final_summary()
+
+        if self.tracker is not None:
+            best = self.memory.best()
+            if best:
+                self.tracker.log_metrics({"final_best_val_loss": best.best_val_loss or 0.0})
+            self.tracker.log_text(self.memory.summary_for_context(), tag="final_summary")
+            self.tracker.end_run(status="completed")
+
         return self.memory
 
     # ------------------------------------------------------------------

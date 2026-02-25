@@ -41,6 +41,19 @@ setup(
         "agents-litellm": [
             "litellm>=1.0.0",
         ],
+        "streaming": [
+            "fsspec>=2023.1.0",
+            "s3fs>=2023.1.0",
+        ],
+        "wandb": [
+            "wandb>=0.15.0",
+        ],
+        "comet": [
+            "comet-ml>=3.30.0",
+        ],
+        "mlflow": [
+            "mlflow>=2.0.0",
+        ],
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",

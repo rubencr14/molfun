@@ -106,6 +106,7 @@ class FinetuneStrategy(ABC):
         val_loader: Optional[DataLoader] = None,
         epochs: int = 10,
         verbose: bool = True,
+        tracker=None,
     ) -> list[dict]:
         """
         Run the full training loop.
@@ -115,6 +116,7 @@ class FinetuneStrategy(ABC):
             train_loader: Training data.
             val_loader: Optional validation data.
             epochs: Number of epochs.
+            tracker: Optional BaseTracker for experiment logging.
 
         Returns:
             List of per-epoch metric dicts.
@@ -135,6 +137,9 @@ class FinetuneStrategy(ABC):
         all_params = [p for g in groups for p in g["params"]]
         if self.ema_decay > 0:
             self._ema = EMA(all_params, decay=self.ema_decay)
+
+        if tracker is not None:
+            tracker.log_config(self.describe())
 
         best_val = float("inf")
         patience_counter = 0
@@ -171,6 +176,9 @@ class FinetuneStrategy(ABC):
                     metrics["patience"] = patience_counter
 
             history.append(metrics)
+
+            if tracker is not None:
+                tracker.log_metrics(metrics, step=epoch + 1)
 
             if verbose:
                 val_str = f"{metrics['val_loss']:.4f}" if "val_loss" in metrics else "   —  "

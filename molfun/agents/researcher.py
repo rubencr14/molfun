@@ -13,6 +13,7 @@ from molfun.agents.base import BaseAgent, AgentConfig
 from molfun.agents.llm.base import BaseLLM
 from molfun.agents.tools import MolfunTools
 from molfun.agents.memory import ExperimentMemory
+from molfun.tracking.base import BaseTracker
 
 
 RESEARCH_SYSTEM_PROMPT = """\
@@ -114,9 +115,10 @@ class ResearchAgent(BaseAgent):
         tools: MolfunTools,
         memory: Optional[ExperimentMemory] = None,
         config: Optional[AgentConfig] = None,
+        tracker: Optional[BaseTracker] = None,
         custom_system_prompt: Optional[str] = None,
     ):
-        super().__init__(llm=llm, tools=tools, memory=memory, config=config)
+        super().__init__(llm=llm, tools=tools, memory=memory, config=config, tracker=tracker)
         self._custom_system_prompt = custom_system_prompt
 
     def system_prompt(self) -> str:
