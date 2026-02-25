@@ -115,16 +115,22 @@ def auto_parser(path: str, **kwargs):
 
     Args:
         path: File path (local or remote).
-        **kwargs: Passed to the parser constructor.
+        **kwargs: Passed to the parser constructor (only accepted params).
 
     Returns:
         An instance of the matching parser.
     """
+    import inspect
+
     path_lower = str(path).lower()
 
     for ext in sorted(PARSER_REGISTRY, key=len, reverse=True):
         if path_lower.endswith(ext):
-            return PARSER_REGISTRY[ext](**kwargs)
+            cls = PARSER_REGISTRY[ext]
+            sig = inspect.signature(cls.__init__)
+            valid = {k for k in sig.parameters if k != "self"}
+            filtered = {k: v for k, v in kwargs.items() if k in valid}
+            return cls(**filtered)
 
     available = sorted(set(PARSER_REGISTRY.keys()))
     raise ValueError(
