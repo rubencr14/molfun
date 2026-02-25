@@ -349,6 +349,125 @@ class MolfunStructureModel:
         return ModuleSwapper.discover(actual_model, pattern=pattern)
 
     # ------------------------------------------------------------------
+    # Hugging Face Hub
+    # ------------------------------------------------------------------
+
+    def push_to_hub(
+        self,
+        repo_id: str,
+        token: Optional[str] = None,
+        private: bool = False,
+        metrics: Optional[dict] = None,
+        dataset_name: Optional[str] = None,
+        commit_message: str = "Upload Molfun model",
+    ) -> str:
+        """
+        Push model checkpoint + auto-generated model card to HF Hub.
+
+        Args:
+            repo_id: Hub repo (e.g. "user/my-affinity-model").
+            token: HF API token (or set HF_TOKEN env var).
+            private: Whether the repo should be private.
+            metrics: Evaluation metrics to include in the model card.
+            dataset_name: Training dataset name for the card.
+            commit_message: Git commit message for the upload.
+
+        Returns:
+            URL of the uploaded repo.
+
+        Usage::
+
+            model.push_to_hub("rubencr/kinase-affinity-lora", metrics={"mae": 0.42})
+        """
+        import tempfile
+
+        from molfun.tracking.hf_tracker import HuggingFaceTracker
+        from molfun.tracking.model_card import generate_model_card
+
+        tracker = HuggingFaceTracker(
+            repo_id=repo_id, token=token, private=private,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self.save(tmp)
+            tracker.start_run(name=commit_message, config=self.summary())
+            if metrics:
+                tracker.log_metrics(metrics)
+            tracker.log_artifact(tmp, name="checkpoint")
+
+        card = generate_model_card(
+            model_summary=self.summary(),
+            metrics=metrics,
+            dataset_name=dataset_name,
+        )
+        tracker.upload_model_card(card)
+        tracker.end_run()
+
+        return f"https://huggingface.co/{repo_id}"
+
+    @classmethod
+    def from_hub(
+        cls,
+        repo_id: str,
+        token: Optional[str] = None,
+        revision: Optional[str] = None,
+        device: str = "cpu",
+        head: Optional[str] = None,
+        head_config: Optional[dict] = None,
+    ) -> "MolfunStructureModel":
+        """
+        Download and load a model from Hugging Face Hub.
+
+        Args:
+            repo_id: Hub repo (e.g. "user/my-affinity-model").
+            token: HF API token.
+            revision: Git revision (branch, tag, commit hash).
+            device: Target device.
+            head: Task head to attach (overrides saved head).
+            head_config: Head kwargs (overrides saved config).
+
+        Returns:
+            Loaded MolfunStructureModel.
+
+        Usage::
+
+            model = MolfunStructureModel.from_hub("rubencr/kinase-affinity-lora")
+            output = model.predict(batch)
+        """
+        from molfun.tracking.hf_tracker import HuggingFaceTracker
+
+        tracker = HuggingFaceTracker(repo_id=repo_id, token=token)
+
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            local_dir = tracker.download_repo(tmp, revision=revision)
+            ckpt_dir = Path(local_dir) / "checkpoint"
+
+            if not ckpt_dir.exists():
+                ckpt_dir = Path(local_dir)
+
+            meta_path = ckpt_dir / "meta.pt"
+            if meta_path.exists():
+                meta = torch.load(meta_path, map_location=device, weights_only=True)
+                name = meta.get("name", "openfold")
+            else:
+                name = "custom"
+
+            if name == "custom":
+                raise ValueError(
+                    "Cannot reconstruct custom models from Hub yet. "
+                    "Use from_custom() with a ModelBuilder config instead."
+                )
+
+            instance = cls(
+                name=name, device=device,
+                head=head, head_config=head_config,
+            )
+            instance.load(str(ckpt_dir))
+
+        return instance
+
+    # ------------------------------------------------------------------
     # Registry queries
     # ------------------------------------------------------------------
 

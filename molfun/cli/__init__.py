@@ -14,6 +14,10 @@ Commands
     molfun agent        Launch autonomous research agent
     molfun eval         Evaluate a trained checkpoint on test data
     molfun benchmark    Run performance benchmarks
+
+    molfun push         Push model checkpoint to Hugging Face Hub
+    molfun pull         Download model from Hugging Face Hub
+    molfun push-dataset Push dataset to Hugging Face Hub
 """
 
 import typer
@@ -26,6 +30,7 @@ from molfun.cli.registry import registry
 from molfun.cli.agent import agent
 from molfun.cli.eval import eval_model
 from molfun.cli.benchmark import benchmark
+from molfun.cli.hub import push, pull, push_dataset
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
 
@@ -48,3 +53,8 @@ app.command("agent")(agent)
 # Evaluation & Benchmarks
 app.command("eval")(eval_model)
 app.command("benchmark")(benchmark)
+
+# Hugging Face Hub
+app.command("push")(push)
+app.command("pull")(pull)
+app.command("push-dataset")(push_dataset)

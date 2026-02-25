@@ -57,6 +57,9 @@ setup(
         "langfuse": [
             "langfuse>=2.0.0",
         ],
+        "hub": [
+            "huggingface_hub>=0.19.0",
+        ],
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
