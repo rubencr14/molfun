@@ -45,6 +45,9 @@ def _lazy_import(name):
     elif name == "MLflowTracker":
         from molfun.tracking.mlflow_tracker import MLflowTracker
         return MLflowTracker
+    elif name == "LangfuseTracker":
+        from molfun.tracking.langfuse_tracker import LangfuseTracker
+        return LangfuseTracker
     raise AttributeError(f"module 'molfun.tracking' has no attribute {name!r}")
 
 

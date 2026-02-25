@@ -132,6 +132,13 @@ class TestLazyImports:
         except ImportError as e:
             assert "mlflow" in str(e).lower()
 
+    def test_langfuse_import_error(self):
+        try:
+            from molfun.tracking import LangfuseTracker
+            LangfuseTracker()
+        except ImportError as e:
+            assert "langfuse" in str(e).lower()
+
 
 class TestTrackerWithTraining:
     """Test that the tracker integrates with the training loop."""

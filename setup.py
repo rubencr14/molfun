@@ -54,6 +54,9 @@ setup(
         "mlflow": [
             "mlflow>=2.0.0",
         ],
+        "langfuse": [
+            "langfuse>=2.0.0",
+        ],
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
