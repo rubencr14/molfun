@@ -17,6 +17,19 @@ Usage:
     strategy = LoRAFinetune(rank=8, lr_lora=1e-4, lr_head=1e-3)
     history = model.fit(train_loader, val_loader, strategy=strategy, epochs=10)
     model.save("checkpoint/")
+
+    # Custom model from pluggable components
+    from molfun.modules.builder import ModelBuilder
+
+    built = ModelBuilder(
+        embedder="input", block="pairformer", structure_module="ipa",
+        n_blocks=8, block_config={"d_single": 256, "d_pair": 128},
+    ).build()
+    model = MolfunStructureModel.from_custom(built, head="affinity", head_config={"single_dim": 256})
+
+    # Swap modules in a pre-trained model
+    model = MolfunStructureModel("openfold", config=cfg, weights="ckpt.pt")
+    model.swap("structure_module", MyCustomSM())
 """
 
 from __future__ import annotations
@@ -221,6 +234,123 @@ class MolfunStructureModel:
                 "params": sum(p.numel() for p in self.head.parameters()),
             }
         return info
+
+    # ------------------------------------------------------------------
+    # Custom model building
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_custom(
+        cls,
+        adapter: BaseAdapter,
+        device: str = "cuda",
+        head: Optional[str] = None,
+        head_config: Optional[dict] = None,
+    ) -> "MolfunStructureModel":
+        """
+        Create a MolfunStructureModel from a custom adapter (e.g. BuiltModel).
+
+        This bypasses the ADAPTER_REGISTRY and directly uses the provided
+        adapter, enabling custom architectures built with ModelBuilder
+        or hand-crafted nn.Modules that implement BaseAdapter.
+
+        Usage::
+
+            from molfun.modules.builder import ModelBuilder
+            built = ModelBuilder(
+                embedder="input", block="pairformer", structure_module="ipa",
+            ).build()
+            model = MolfunStructureModel.from_custom(
+                built, head="affinity", head_config={"single_dim": 256},
+            )
+        """
+        instance = cls.__new__(cls)
+        instance.name = "custom"
+        instance.device = device
+        instance.adapter = adapter.to(device)
+        instance._peft = None
+        instance._strategy = None
+        instance.head = None
+        if head:
+            head_cls = HEAD_REGISTRY.get(head)
+            if head_cls is None:
+                raise ValueError(f"Unknown head: {head}. Available: {list(HEAD_REGISTRY)}")
+            instance.head = head_cls(**(head_config or {})).to(device)
+        return instance
+
+    # ------------------------------------------------------------------
+    # Module swapping
+    # ------------------------------------------------------------------
+
+    def swap(
+        self,
+        target_path: str,
+        new_module: nn.Module,
+        transfer_weights: bool = False,
+    ) -> nn.Module:
+        """
+        Replace an internal submodule of the adapter's model.
+
+        Uses ModuleSwapper under the hood. The target_path is relative
+        to the adapter's internal model (e.g. "structure_module",
+        "evoformer.blocks.0").
+
+        Args:
+            target_path: Dotted path to the submodule.
+            new_module: Replacement module.
+            transfer_weights: Copy matching weights from old module.
+
+        Returns:
+            The old (replaced) module.
+
+        Usage::
+
+            from molfun.modules.structure_module import DiffusionStructureModule
+            model.swap("structure_module", DiffusionStructureModule(...))
+        """
+        from molfun.modules.swapper import ModuleSwapper
+        target = self.adapter if hasattr(self.adapter, 'model') else self.adapter
+        actual_model = getattr(target, 'model', target)
+        return ModuleSwapper.swap(
+            actual_model, target_path, new_module,
+            transfer_weights=transfer_weights,
+        )
+
+    def swap_all(
+        self,
+        pattern: str,
+        factory,
+        transfer_weights: bool = False,
+    ) -> int:
+        """
+        Swap all submodules matching a regex pattern.
+
+        Args:
+            pattern: Regex pattern for module names.
+            factory: ``factory(name, old_module) → new_module``.
+            transfer_weights: Copy matching weights from old modules.
+
+        Returns:
+            Number of modules swapped.
+        """
+        from molfun.modules.swapper import ModuleSwapper
+        target = self.adapter if hasattr(self.adapter, 'model') else self.adapter
+        actual_model = getattr(target, 'model', target)
+        return ModuleSwapper.swap_all(
+            actual_model, pattern, factory,
+            transfer_weights=transfer_weights,
+        )
+
+    def discover_modules(self, pattern: Optional[str] = None) -> list[tuple[str, nn.Module]]:
+        """List swappable modules inside the model."""
+        from molfun.modules.swapper import ModuleSwapper
+        target = self.adapter if hasattr(self.adapter, 'model') else self.adapter
+        actual_model = getattr(target, 'model', target)
+        return ModuleSwapper.discover(actual_model, pattern=pattern)
+
+    # ------------------------------------------------------------------
+    # Registry queries
+    # ------------------------------------------------------------------
 
     @staticmethod
     def available_models() -> list[str]:
