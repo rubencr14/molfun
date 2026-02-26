@@ -62,11 +62,9 @@ def fill_missing_batch_fields(batch: dict) -> dict:
     device = ref.device if ref is not None else torch.device("cpu")
     B      = ref.shape[0] if (ref is not None and ref.dim() > 0) else 1
 
-    # experimentally_resolved_loss requires resolution
     if "resolution" not in batch:
         batch["resolution"] = torch.zeros(B, device=device)
 
-    # masked_msa_loss requires true_msa and bert_mask
     if "true_msa" not in batch:
         msa = batch.get("msa")
         if msa is not None:

@@ -13,7 +13,7 @@ from molfun.core.types import TrunkOutput
 class OpenFoldAdapter(BaseAdapter):
     """
     Wraps an OpenFold AlphaFold model behind a normalized API.
-    
+
     Exposes:
     - forward() → TrunkOutput with single/pair representations and structure
     - peft_target_module → evoformer (for PEFT injection)
@@ -82,7 +82,6 @@ class OpenFoldAdapter(BaseAdapter):
         """
         outputs = self.model(batch)
 
-        # pLDDT from structure module logits
         confidence = None
         if "plddt" in outputs:
             confidence = outputs["plddt"]
@@ -102,7 +101,6 @@ class OpenFoldAdapter(BaseAdapter):
                 "msa": outputs.get("msa"),
                 "sm": outputs.get("sm"),
                 "num_recycles": outputs.get("num_recycles"),
-                # Full output dict required by StructureLossHead / AlphaFoldLoss
                 "_raw_outputs": outputs,
             },
         )
@@ -126,7 +124,6 @@ class OpenFoldAdapter(BaseAdapter):
             if mod is not None:
                 modules[key] = mod
 
-        # Expose individual evoformer blocks
         evoformer = getattr(self.model, self.EVOFORMER_KEY, None)
         if evoformer is not None:
             blocks = getattr(evoformer, "blocks", None)

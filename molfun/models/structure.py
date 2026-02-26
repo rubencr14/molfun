@@ -61,7 +61,7 @@ def _register_adapters():
     """Lazy registration to avoid import errors for uninstalled backends."""
     if ADAPTER_REGISTRY:
         return
-    from molfun.adapters.openfold import OpenFoldAdapter
+    from molfun.backends.openfold.adapter import OpenFoldAdapter
     ADAPTER_REGISTRY["openfold"] = OpenFoldAdapter
 
 

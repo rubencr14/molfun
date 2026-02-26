@@ -79,7 +79,6 @@ class OpenFoldFeaturizer:
         self.num_msa = num_msa
         self.num_extra_msa = num_extra_msa
 
-        # Import here to give a helpful error if OpenFold is not installed
         try:
             from openfold.np import residue_constants as rc
             from openfold.data import data_transforms
@@ -133,7 +132,6 @@ class OpenFoldFeaturizer:
         protein["seq_length"] = torch.tensor([L], dtype=torch.int64)
         protein["seq_mask"] = torch.ones(L, dtype=torch.float32)
 
-        # Add recycling dim to all feature tensors
         protein = self._add_recycling_dim(protein)
         return protein
 
@@ -246,8 +244,6 @@ class OpenFoldFeaturizer:
 
         aatype_t = torch.tensor(aatype, dtype=torch.long)
 
-        # target_feat: one-hot of aatype over 22 classes (20 AAs + unk + gap)
-        # Required by OpenFold's InputEmbedder
         import torch.nn.functional as F
         target_feat = F.one_hot(aatype_t.clamp(max=21), num_classes=22).float()
 
@@ -256,7 +252,7 @@ class OpenFoldFeaturizer:
             "residue_index": torch.arange(L, dtype=torch.long),
             "all_atom_positions": torch.tensor(atom_pos, dtype=torch.float32),
             "all_atom_mask": torch.tensor(atom_mask, dtype=torch.float32),
-            "target_feat": target_feat,  # [L, 22] — required by OpenFold
+            "target_feat": target_feat,
         }
         return protein
 
@@ -264,25 +260,12 @@ class OpenFoldFeaturizer:
         """Apply OpenFold data transforms to generate GT fields in-place."""
         dt = self._dt
 
-        # atom14 masks (residx_atom14_to_atom37, atom14_atom_exists, …)
         dt.make_atom14_masks(protein)
-
-        # Rigid group frames from atom37 coords
         dt.atom37_to_frames(protein)
-
-        # Backbone rigid (backbone_rigid_tensor, backbone_rigid_mask)
         dt.get_backbone_frames(protein)
-
-        # Atom14 GT positions + alt GT
         dt.make_atom14_positions(protein)
-
-        # Torsion / chi angles
         dt.atom37_to_torsion_angles("")(protein)
-
-        # Chi angles (chi_angles_sin_cos, chi_mask)
         dt.get_chi_angles(protein)
-
-        # pseudo_beta, pseudo_beta_mask
         dt.make_pseudo_beta("")(protein)
 
     # ------------------------------------------------------------------
@@ -303,11 +286,9 @@ class OpenFoldFeaturizer:
         else:
             msa_seqs = [seq]
 
-        # Cap MSA depth
         msa_seqs = msa_seqs[: self.num_msa]
         N = len(msa_seqs)
 
-        # Encode MSA
         msa = np.zeros((N, L), dtype=np.int64)
         deletion_matrix = np.zeros((N, L), dtype=np.float32)
 
@@ -318,7 +299,6 @@ class OpenFoldFeaturizer:
         msa_t = torch.tensor(msa, dtype=torch.long)
         del_t = torch.tensor(deletion_matrix, dtype=torch.float32)
 
-        # Residue types for one-hot MSA feat (21 categories)
         msa_one_hot = torch.zeros(N, L, 23, dtype=torch.float32)
         for i in range(N):
             for j in range(L):
@@ -326,8 +306,6 @@ class OpenFoldFeaturizer:
                 if idx < 23:
                     msa_one_hot[i, j, idx] = 1.0
 
-        # msa_feat: [N, L, 49] = one_hot(23) + has_deletion(1) + deletion_value(1) + ...
-        # Simplified to required fields; OpenFold's make_msa_feat builds the full version.
         msa_feat = torch.zeros(N, L, 49, dtype=torch.float32)
         msa_feat[:, :, :23] = msa_one_hot
         has_del = (del_t > 0).float().unsqueeze(-1)
@@ -335,7 +313,6 @@ class OpenFoldFeaturizer:
 
         msa_mask = torch.ones(N, L, dtype=torch.float32)
 
-        # Extra MSA (duplicate query for now)
         extra_N = min(N, self.num_extra_msa)
         extra_msa = msa_t[:extra_N]
         extra_del = del_t[:extra_N]
@@ -407,7 +384,6 @@ class OpenFoldFeaturizer:
         features for each recycling iteration, so ALL tensors must carry this
         trailing dimension (including MSA and template tensors).
         """
-        # Only truly scalar/non-tensor fields skip this
         skip = {"seq_length"}
         out = {}
         for k, v in protein.items():

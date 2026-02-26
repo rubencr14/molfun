@@ -139,7 +139,7 @@ class TestOpenFoldReal:
 
     def test_adapter_loads_without_weights(self):
         """Build model from config, no weights — should work."""
-        from molfun.adapters.openfold import OpenFoldAdapter
+        from molfun.backends.openfold import OpenFoldAdapter
 
         adapter = OpenFoldAdapter(config=self.config, device="cuda")
         info = adapter.param_summary()
@@ -149,7 +149,7 @@ class TestOpenFoldReal:
     @skip_no_weights
     def test_adapter_loads_with_weights(self):
         """Load real pre-trained weights."""
-        from molfun.adapters.openfold import OpenFoldAdapter
+        from molfun.backends.openfold import OpenFoldAdapter
 
         adapter = OpenFoldAdapter(
             config=self.config,

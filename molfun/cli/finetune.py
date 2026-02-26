@@ -87,7 +87,7 @@ def structure(
     from torch.utils.data import DataLoader, Dataset, random_split
     from openfold.config import model_config
     from molfun.models.structure import MolfunStructureModel
-    from molfun.featurizers import OpenFoldFeaturizer
+    from molfun.backends.openfold import OpenFoldFeaturizer
 
     torch.manual_seed(seed)
 

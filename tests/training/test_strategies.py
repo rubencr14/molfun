@@ -10,7 +10,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from molfun.models.structure import MolfunStructureModel
-from molfun.adapters.openfold import OpenFoldAdapter
+from molfun.backends.openfold import OpenFoldAdapter
 from molfun.training import (
     FinetuneStrategy,
     HeadOnlyFinetune,

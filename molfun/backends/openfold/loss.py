@@ -2,23 +2,15 @@
 OpenFold structure loss.
 
 Wraps OpenFold's AlphaFoldLoss so it fits the LossFunction interface.
-Batch pre-processing helpers are in molfun.helpers.openfold and re-exported
-here for convenience.
 
 Usage
 -----
-from molfun.losses.openfold import OpenFoldLoss
+from molfun.backends.openfold import OpenFoldLoss
 
-# Full composite loss (FAPE + chi + distogram + pLDDT):
 loss_fn = OpenFoldLoss(config.loss)
-
-# Only FAPE + supervised chi:
 loss_fn = OpenFoldLoss.fape_only(config)
-
-# Custom per-term weights:
 loss_fn = OpenFoldLoss.with_weights(config, fape=1.0, masked_msa=0.0)
 
-# Compute:
 scalar = loss_fn(raw_openfold_outputs, batch=feature_dict)
 """
 
@@ -27,7 +19,7 @@ from typing import Optional, TYPE_CHECKING
 import torch
 
 from molfun.losses.base import LOSS_REGISTRY, LossFunction
-from molfun.helpers.openfold import (
+from molfun.backends.openfold.helpers import (
     strip_recycling_dim,
     fill_missing_batch_fields,
     make_zero_violation,
@@ -154,9 +146,6 @@ class OpenFoldLoss(LossFunction):
         batch_no_recycle = strip_recycling_dim(batch)
         batch_no_recycle = fill_missing_batch_fields(batch_no_recycle)
 
-        # AlphaFoldLoss unconditionally calls find_structural_violations, which
-        # needs a resource file that may be absent in pip-installed OpenFold.
-        # Pre-populate "violation" with zeros so the call is bypassed.
         raw_out = preds
         if "violation" not in raw_out:
             raw_out = dict(raw_out)
@@ -177,4 +166,3 @@ class OpenFoldLoss(LossFunction):
             except Exception:
                 pass
         return {"type": "OpenFoldLoss", "loss_weights": terms}
-
