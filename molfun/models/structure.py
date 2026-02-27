@@ -122,14 +122,180 @@ class MolfunStructureModel:
             self.head = head_cls(**(head_config or {})).to(device)
 
     # ------------------------------------------------------------------
+    # Pretrained loading
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        name: str = "openfold",
+        device: str = "cpu",
+        head: Optional[str] = None,
+        head_config: Optional[dict] = None,
+        cache_dir: Optional[str] = None,
+        force_download: bool = False,
+    ) -> "MolfunStructureModel":
+        """
+        Load a pretrained model with automatic weight download.
+
+        Downloads weights to ``~/.molfun/weights/<name>/`` on first call,
+        then loads from cache on subsequent calls.
+
+        Args:
+            name: Pretrained model name. See ``available_pretrained()``.
+            device: Target device ("cpu" or "cuda").
+            head: Optional task head ("affinity", "structure").
+            head_config: Head kwargs.
+            cache_dir: Override weight cache directory.
+            force_download: Re-download even if cached.
+
+        Returns:
+            Ready-to-use MolfunStructureModel.
+
+        Usage::
+
+            model = MolfunStructureModel.from_pretrained("openfold")
+            output = model.predict("MKWVTFISLLLLFSSAYS")
+        """
+        from molfun.hub.registry import download_weights, get_config, PRETRAINED_REGISTRY
+
+        if name not in PRETRAINED_REGISTRY:
+            available = ", ".join(sorted(PRETRAINED_REGISTRY.keys()))
+            raise ValueError(
+                f"Unknown pretrained model '{name}'. Available: {available}"
+            )
+
+        spec = PRETRAINED_REGISTRY[name]
+        weights_path = download_weights(
+            name, force=force_download, cache_dir=cache_dir,
+        )
+        config = get_config(name)
+
+        return cls(
+            name=spec.backend,
+            config=config,
+            weights=str(weights_path),
+            device=device,
+            head=head,
+            head_config=head_config,
+        )
+
+    # ------------------------------------------------------------------
     # Inference
     # ------------------------------------------------------------------
 
     @torch.no_grad()
-    def predict(self, batch: dict) -> TrunkOutput:
-        """Run inference (no grad, eval mode)."""
+    def predict(self, batch_or_sequence, **kwargs) -> TrunkOutput:
+        """
+        Run inference (no grad, eval mode).
+
+        Accepts either a feature dict (batch) or a raw amino acid sequence
+        string. When a string is passed, it is automatically featurized.
+
+        Args:
+            batch_or_sequence: Feature dict or amino acid sequence string
+                               (e.g. "MKWVTFISLLLLFSSAYS").
+
+        Returns:
+            TrunkOutput with single_repr, pair_repr, structure_coords,
+            and confidence (pLDDT).
+
+        Usage::
+
+            # From sequence string
+            output = model.predict("MKWVTFISLLLLFSSAYS")
+
+            # From pre-built feature dict
+            output = model.predict(batch)
+        """
+        if isinstance(batch_or_sequence, str):
+            batch = self._featurize_sequence(batch_or_sequence)
+        else:
+            batch = batch_or_sequence
         self.adapter.eval()
         return self.adapter(batch)
+
+    def _featurize_sequence(self, sequence: str) -> dict:
+        """Convert a raw amino acid sequence to a model-ready feature dict."""
+        if self.name == "openfold" or (
+            hasattr(self, 'adapter') and
+            type(self.adapter).__name__ == "OpenFoldAdapter"
+        ):
+            return self._featurize_openfold(sequence)
+        raise NotImplementedError(
+            f"Automatic featurization not implemented for backend '{self.name}'. "
+            "Pass a pre-built feature dict instead."
+        )
+
+    def _featurize_openfold(self, sequence: str) -> dict:
+        """Build a minimal OpenFold feature dict from a sequence string."""
+        sequence = sequence.upper().strip()
+        L = len(sequence)
+
+        try:
+            from openfold.np import residue_constants as rc
+        except ImportError:
+            raise ImportError(
+                "OpenFold is required for sequence featurization. "
+                "Install with: pip install molfun[openfold]"
+            )
+
+        import torch.nn.functional as F
+
+        aatype = torch.tensor(
+            [rc.restype_order.get(aa, rc.restype_num) for aa in sequence],
+            dtype=torch.long,
+        )
+        residue_index = torch.arange(L, dtype=torch.long)
+        target_feat = F.one_hot(aatype.clamp(max=21), num_classes=22).float()
+
+        N_msa = 1
+        msa = aatype.unsqueeze(0)
+        msa_mask = torch.ones(N_msa, L, dtype=torch.float32)
+        msa_one_hot = F.one_hot(msa.clamp(max=22), num_classes=23).float()
+        msa_feat = torch.zeros(N_msa, L, 49, dtype=torch.float32)
+        msa_feat[:, :, :23] = msa_one_hot
+
+        T = 4
+        batch = {
+            "aatype": aatype,
+            "residue_index": residue_index,
+            "target_feat": target_feat,
+            "seq_length": torch.tensor([L], dtype=torch.int64),
+            "seq_mask": torch.ones(L, dtype=torch.float32),
+            "msa": msa,
+            "msa_mask": msa_mask,
+            "msa_feat": msa_feat,
+            "deletion_matrix": torch.zeros(N_msa, L, dtype=torch.float32),
+            "bert_mask": torch.zeros(N_msa, L, dtype=torch.float32),
+            "true_msa": msa.clone(),
+            "extra_msa": msa[:1],
+            "extra_msa_deletion_value": torch.zeros(1, L, dtype=torch.float32),
+            "extra_msa_mask": torch.ones(1, L, dtype=torch.float32),
+            "extra_has_deletion": torch.zeros(1, L, dtype=torch.float32),
+            "extra_deletion_value": torch.zeros(1, L, dtype=torch.float32),
+            "template_aatype": torch.zeros(T, L, dtype=torch.long),
+            "template_all_atom_positions": torch.zeros(T, L, 37, 3),
+            "template_all_atom_mask": torch.zeros(T, L, 37),
+            "template_mask": torch.zeros(T),
+            "template_pseudo_beta": torch.zeros(T, L, 3),
+            "template_pseudo_beta_mask": torch.zeros(T, L),
+            "template_torsion_angles_sin_cos": torch.zeros(T, L, 7, 2),
+            "template_alt_torsion_angles_sin_cos": torch.zeros(T, L, 7, 2),
+            "template_torsion_angles_mask": torch.zeros(T, L, 7),
+            "template_sum_probs": torch.zeros(T, 1),
+        }
+
+        skip_recycle = {"seq_length"}
+        for k, v in batch.items():
+            if k not in skip_recycle and isinstance(v, torch.Tensor):
+                batch[k] = v.unsqueeze(-1)
+
+        device = torch.device(self.device)
+        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v
+                 for k, v in batch.items()}
+
+        return batch
 
     def forward(self, batch: dict, mask: Optional[torch.Tensor] = None) -> dict:
         """
@@ -536,6 +702,70 @@ class MolfunStructureModel:
         )
 
     # ------------------------------------------------------------------
+    # Example datasets
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def example_dataset(
+        name: str = "globins-small",
+        cache_dir: Optional[str] = None,
+    ) -> list[str]:
+        """
+        Fetch a small example dataset for quick experimentation.
+
+        Downloads PDB structures to ``~/.molfun/examples/<name>/``
+        and returns a list of file paths.
+
+        Available datasets:
+
+        - ``"globins-small"`` — 20 globin structures (small, fast)
+        - ``"kinases-small"`` — 30 human kinases
+        - ``"gpcr-small"`` — 20 GPCR structures
+        - ``"mixed-tiny"`` — 10 mixed structures (fastest)
+
+        Args:
+            name: Example dataset name.
+            cache_dir: Override cache directory.
+
+        Returns:
+            List of paths to downloaded PDB/mmCIF files.
+
+        Usage::
+
+            paths = MolfunStructureModel.example_dataset("globins-small")
+            print(f"Downloaded {len(paths)} structures")
+        """
+        examples = {
+            "globins-small": {"collection": "globins", "limit": 20},
+            "kinases-small": {"collection": "kinases_human", "limit": 30},
+            "gpcr-small": {"collection": "gpcr", "limit": 20},
+            "mixed-tiny": {"collection": "globins", "limit": 10},
+        }
+
+        if name not in examples:
+            available = ", ".join(sorted(examples.keys()))
+            raise ValueError(
+                f"Unknown example dataset '{name}'. Available: {available}"
+            )
+
+        spec = examples[name]
+        base = Path(cache_dir) if cache_dir else Path.home() / ".molfun" / "examples"
+        out_dir = base / name
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        existing = list(out_dir.glob("*.cif")) + list(out_dir.glob("*.pdb"))
+        if existing:
+            return [str(p) for p in sorted(existing)]
+
+        from molfun.data.collections import fetch_collection
+        paths = fetch_collection(
+            spec["collection"],
+            max_structures=spec["limit"],
+            cache_dir=str(out_dir),
+        )
+        return paths
+
+    # ------------------------------------------------------------------
     # Registry queries
     # ------------------------------------------------------------------
 
@@ -547,3 +777,9 @@ class MolfunStructureModel:
     @staticmethod
     def available_heads() -> list[str]:
         return list(HEAD_REGISTRY.keys())
+
+    @staticmethod
+    def available_pretrained() -> list[str]:
+        """List available pretrained model names for from_pretrained()."""
+        from molfun.hub.registry import PRETRAINED_REGISTRY
+        return list(PRETRAINED_REGISTRY.keys())
