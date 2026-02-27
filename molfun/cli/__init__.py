@@ -16,6 +16,8 @@ Commands
     molfun eval         Evaluate a trained checkpoint on test data
     molfun benchmark    Run performance benchmarks
 
+    molfun run          Run a pipeline from a YAML recipe
+
     molfun push         Push model checkpoint to Hugging Face Hub
     molfun pull         Download model from Hugging Face Hub
     molfun push-dataset Push dataset to Hugging Face Hub
@@ -32,12 +34,16 @@ from molfun.cli.agent import agent
 from molfun.cli.eval import eval_model
 from molfun.cli.benchmark import benchmark
 from molfun.cli.hub import push, pull, push_dataset
+from molfun.cli.run import run
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
 
 # Fine-tuning
 app.command("structure")(structure)
 app.command("affinity")(affinity)
+
+# Pipelines
+app.command("run")(run)
 
 # Data
 app.command("fetch-pdb")(fetch_pdb)

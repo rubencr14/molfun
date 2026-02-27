@@ -1,0 +1,37 @@
+# Quick GPCR fine-tuning recipe
+# Usage: molfun run recipes/gpcr_quick.yaml --device cuda
+
+checkpoint_dir: runs/gpcr_quick
+
+steps:
+  - name: fetch
+    fn: molfun.pipelines.steps.fetch_step
+    config:
+      collection: gpcr
+      max_structures: 50
+      resolution_max: 3.5
+      output_dir: data/gpcr
+
+  - name: split
+    fn: molfun.pipelines.steps.split_step
+    config:
+      val_frac: 0.2
+      test_frac: 0.0
+
+  - name: build_dataset
+    fn: molfun.pipelines.steps.build_dataset_step
+    config:
+      max_seq_len: 384
+
+  - name: train
+    fn: molfun.pipelines.steps.train_step
+    config:
+      strategy: head_only
+      epochs: 5
+      lr: 1e-3
+      head: structure
+
+  - name: save
+    fn: molfun.pipelines.steps.save_step
+    config:
+      checkpoint_dir: runs/gpcr_quick/checkpoint

@@ -1,0 +1,46 @@
+# Kinase fine-tuning recipe
+# Usage: molfun run recipes/kinase_finetune.yaml --device cuda
+
+checkpoint_dir: runs/kinase_experiment
+
+steps:
+  - name: fetch
+    fn: molfun.pipelines.steps.fetch_step
+    config:
+      collection: kinases_human
+      max_structures: 200
+      resolution_max: 2.5
+      deduplicate: true
+      identity: 0.3
+      output_dir: data/kinases
+
+  - name: split
+    fn: molfun.pipelines.steps.split_step
+    config:
+      val_frac: 0.1
+      test_frac: 0.1
+      seed: 42
+
+  - name: build_dataset
+    fn: molfun.pipelines.steps.build_dataset_step
+    config:
+      max_seq_len: 256
+      batch_size: 1
+
+  - name: train
+    fn: molfun.pipelines.steps.train_step
+    config:
+      strategy: lora
+      epochs: 20
+      lr: 2e-4
+      rank: 8
+      warmup: 50
+      head: structure
+
+  - name: eval
+    fn: molfun.pipelines.steps.eval_step
+
+  - name: save
+    fn: molfun.pipelines.steps.save_step
+    config:
+      checkpoint_dir: runs/kinase_experiment/checkpoint
