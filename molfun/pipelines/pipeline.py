@@ -52,12 +52,18 @@ class StepResult:
     error: Optional[str] = None
 
 
+PIPELINE_TYPES = ("finetune", "train", "inference", "data", "custom")
+
+
 class Pipeline:
     """
     Composable, checkpointed pipeline.
 
     Args:
         steps: Ordered list of ``PipelineStep`` instances.
+        pipeline_type: Workflow type — "finetune", "train" (sklearn),
+                       "inference", "data", or "custom".
+        model: Model identifier (e.g. "openfold", "random_forest").
         checkpoint_dir: If set, state is saved to JSON after each step.
         hooks: Optional dict with ``on_step_start(name, state)`` and/or
                ``on_step_end(name, state, result)`` callbacks.
@@ -66,10 +72,14 @@ class Pipeline:
     def __init__(
         self,
         steps: list[PipelineStep],
+        pipeline_type: str = "custom",
+        model: str = "",
         checkpoint_dir: Optional[str] = None,
         hooks: Optional[dict[str, Callable]] = None,
     ):
         self.steps = steps
+        self.pipeline_type = pipeline_type
+        self.model = model
         self.checkpoint_dir = checkpoint_dir
         self.hooks = hooks or {}
 
@@ -98,17 +108,21 @@ class Pipeline:
     def step_names(self) -> list[str]:
         return [s.name for s in self.steps]
 
-    def describe(self) -> list[dict]:
+    def describe(self) -> dict:
         """Return a serializable description of the pipeline."""
-        return [
-            {
-                "name": s.name,
-                "fn": f"{s.fn.__module__}.{s.fn.__qualname__}",
-                "config": s.config,
-                "skip": s.skip,
-            }
-            for s in self.steps
-        ]
+        return {
+            "type": self.pipeline_type,
+            "model": self.model,
+            "steps": [
+                {
+                    "name": s.name,
+                    "fn": f"{s.fn.__module__}.{s.fn.__qualname__}",
+                    "config": s.config,
+                    "skip": s.skip,
+                }
+                for s in self.steps
+            ],
+        }
 
     # ------------------------------------------------------------------
     # Internal
@@ -196,14 +210,15 @@ class Pipeline:
 
         Recipe format::
 
-            checkpoint_dir: runs/my_experiment  # optional
+            type: finetune          # finetune | train | inference | data | custom
+            model: openfold         # openfold | random_forest | svm | ...
+            checkpoint_dir: runs/my_experiment
 
             steps:
               - name: fetch
                 fn: molfun.pipelines.steps.fetch_step
                 config:
                   ec_number: "2.7.11"
-                  max_structures: 200
 
               - name: train
                 fn: molfun.pipelines.steps.train_step
@@ -221,10 +236,15 @@ class Pipeline:
         raw = Path(path).read_text()
         recipe = yaml.safe_load(raw)
 
+        pipeline_type = recipe.get("type", "custom")
+        model = recipe.get("model", "")
+
         steps = []
         for entry in recipe.get("steps", []):
             fn = _import_callable(entry["fn"])
             config = entry.get("config", {})
+            if model and "model_name" not in config and "estimator" not in config:
+                config.setdefault("model_name", model)
             if overrides:
                 config = {**config, **overrides}
             steps.append(PipelineStep(
@@ -236,6 +256,8 @@ class Pipeline:
 
         return cls(
             steps=steps,
+            pipeline_type=pipeline_type,
+            model=model,
             checkpoint_dir=recipe.get("checkpoint_dir"),
         )
 

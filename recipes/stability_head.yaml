@@ -1,0 +1,51 @@
+# Protein stability prediction with OpenFold embeddings + MLP head
+# Usage: molfun run recipes/stability_head.yaml --device cuda
+#
+# Scenario: fetch PDBs → CSV labels → backbone embeddings → head → predict
+# Backbone: OpenFold (frozen), only the head is trained
+# Targets:  user-provided CSV matched by pdb_id
+
+type: train
+model: openfold
+checkpoint_dir: runs/stability_head
+
+steps:
+  - name: fetch
+    fn: molfun.pipelines.steps.fetch_step
+    config:
+      collection: globular_enzymes
+      max_structures: 300
+      resolution_max: 2.5
+      output_dir: data/stability
+
+  - name: load_data
+    fn: molfun.pipelines.steps.load_dataset_step
+    config:
+      source: fetch_csv
+      targets_file: data/stability_labels.csv   # your CSV here
+      pdb_id_col: pdb_id
+      target_col: delta_g
+
+  - name: extract_embeddings
+    fn: molfun.pipelines.steps.extract_embeddings_step
+    config:
+      backbone: openfold
+      layer: last
+      pooling: mean
+
+  - name: train_head
+    fn: molfun.pipelines.steps.train_head_step
+    config:
+      head_type: mlp
+      task: regression
+      hidden_dims: [256, 128]
+      epochs: 200
+      lr: 0.001
+
+  - name: eval
+    fn: molfun.pipelines.steps.eval_head_step
+
+  - name: save
+    fn: molfun.pipelines.steps.save_sklearn_step
+    config:
+      model_path: runs/stability_head/model.joblib

@@ -1,0 +1,54 @@
+# Binding affinity prediction with Random Forest (classical ML)
+# Usage: molfun run recipes/affinity_rf.yaml
+#
+# Scenario: CSV → sequences + targets → features → sklearn → predict
+# Targets:  user-provided CSV with (sequence, kd_nm) columns
+
+type: train
+model: random_forest
+checkpoint_dir: runs/affinity_rf
+
+steps:
+  - name: load_data
+    fn: molfun.pipelines.steps.load_dataset_step
+    config:
+      source: csv
+      targets_file: data/affinity_labels.csv   # your CSV here
+      sequence_col: sequence
+      target_col: kd_nm
+
+  - name: featurize
+    fn: molfun.pipelines.steps.featurize_step
+    config:
+      features:
+        - aa_composition
+        - dipeptide
+        - molecular_weight
+        - charge_ph7
+        - hydrophobicity
+        - aromaticity
+        - ss_propensity
+        - sequence_entropy
+        - aa_groups
+
+  - name: split
+    fn: molfun.pipelines.steps.split_sklearn_step
+    config:
+      val_frac: 0.2
+      seed: 42
+
+  - name: train
+    fn: molfun.pipelines.steps.train_sklearn_step
+    config:
+      estimator: random_forest
+      task: regression
+      n_estimators: 500
+      max_depth: 20
+
+  - name: eval
+    fn: molfun.pipelines.steps.eval_sklearn_step
+
+  - name: save
+    fn: molfun.pipelines.steps.save_sklearn_step
+    config:
+      model_path: runs/affinity_rf/model.joblib

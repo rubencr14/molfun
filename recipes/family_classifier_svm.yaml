@@ -1,0 +1,51 @@
+# Protein family classification with SVM (classical ML)
+# Usage: molfun run recipes/family_classifier_svm.yaml
+#
+# Scenario: CSV → sequences + labels → features → SVM → classify
+# Targets:  user-provided CSV with (sequence, family) columns
+
+type: train
+model: svm
+checkpoint_dir: runs/family_svm
+
+steps:
+  - name: load_data
+    fn: molfun.pipelines.steps.load_dataset_step
+    config:
+      source: csv
+      targets_file: data/protein_families.csv   # your CSV here
+      sequence_col: sequence
+      target_col: family
+
+  - name: featurize
+    fn: molfun.pipelines.steps.featurize_step
+    config:
+      features:
+        - aa_composition
+        - dipeptide
+        - hydrophobicity
+        - ss_propensity
+        - gravy
+        - isoelectric_point
+
+  - name: split
+    fn: molfun.pipelines.steps.split_sklearn_step
+    config:
+      val_frac: 0.2
+      seed: 42
+
+  - name: train
+    fn: molfun.pipelines.steps.train_sklearn_step
+    config:
+      estimator: svm
+      task: classification
+      kernel: rbf
+      C: 10.0
+
+  - name: eval
+    fn: molfun.pipelines.steps.eval_sklearn_step
+
+  - name: save
+    fn: molfun.pipelines.steps.save_sklearn_step
+    config:
+      model_path: runs/family_svm/model.joblib

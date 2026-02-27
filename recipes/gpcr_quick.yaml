@@ -1,6 +1,8 @@
 # Quick GPCR fine-tuning recipe
 # Usage: molfun run recipes/gpcr_quick.yaml --device cuda
 
+type: finetune
+model: openfold
 checkpoint_dir: runs/gpcr_quick
 
 steps:

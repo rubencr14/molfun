@@ -437,3 +437,468 @@ def push_step(state: StateDict) -> StateDict:
     tracker.push_checkpoint(str(ckpt), commit_message=message)
 
     return {**state, "hub_repo": repo}
+
+
+# ==================================================================
+# Dataset loading (shared between head training and classical ML)
+# ==================================================================
+
+def load_dataset_step(state: StateDict) -> StateDict:
+    """
+    Load a PropertyDataset into the pipeline state.
+
+    This step is **optional** for structure fine-tuning (targets = 3D coords
+    inside the PDB), but **required** for property heads and classical ML.
+
+    Uses ``PropertyDataset`` as the unified data wrapper, supporting
+    CSV files, inline data, and matching fetched PDB paths with labels.
+
+    Config keys:
+        source (str): One of "csv", "inline", "fetch_csv". Default "csv".
+
+        --- CSV source ---
+        targets_file (str):  Path to CSV/TSV file.
+        sequence_col (str):  Column with sequences (default "sequence").
+        target_col (str):    Column with target values (default "target").
+        pdb_id_col (str):    Column with PDB IDs (default "pdb_id").
+        sep (str):           Separator (auto-detected if omitted).
+        pdb_dir (str):       If given, resolves PDB paths from pdb_id column.
+        pdb_fmt (str):       File extension for PDBs (default "cif").
+
+        --- Inline source ---
+        sequences (list[str]):  Protein sequences.
+        targets (list[float]):  Target values.
+
+        --- fetch_csv source ---
+        targets_file (str):  CSV with labels.
+        target_col (str):    Column with target values.
+        pdb_id_col (str):    Column with PDB IDs.
+        (Uses pdb_paths from a previous fetch step in the state.)
+
+    Produces:
+        state["dataset"]:    PropertyDataset instance.
+        state["sequences"]:  list of sequences.
+        state["y"]:          np.ndarray of targets.
+        state["pdb_ids"]:    list of PDB IDs (if available).
+        state["pdb_paths"]:  list of paths (if available).
+    """
+    from molfun.data.datasets.property import PropertyDataset
+
+    source = state.get("source", "csv")
+
+    if source == "csv":
+        ds = PropertyDataset.from_csv(
+            csv_path=state["targets_file"],
+            sequence_col=state.get("sequence_col", "sequence"),
+            target_col=state.get("target_col", "target"),
+            pdb_id_col=state.get("pdb_id_col", "pdb_id"),
+            sep=state.get("sep"),
+            pdb_dir=state.get("pdb_dir"),
+            pdb_fmt=state.get("pdb_fmt", "cif"),
+        )
+    elif source == "inline":
+        ds = PropertyDataset.from_inline(
+            sequences=state.get("sequences"),
+            targets=state.get("targets"),
+            pdb_paths=state.get("pdb_paths"),
+            target_name=state.get("target_col", "target"),
+        )
+    elif source == "fetch_csv":
+        pdb_paths = state.get("pdb_paths", [])
+        if not pdb_paths:
+            raise ValueError("source='fetch_csv' requires pdb_paths from a fetch step")
+        ds = PropertyDataset.from_fetch_and_csv(
+            pdb_paths=pdb_paths,
+            csv_path=state["targets_file"],
+            target_col=state.get("target_col", "target"),
+            pdb_id_col=state.get("pdb_id_col", "pdb_id"),
+            sep=state.get("sep"),
+        )
+    else:
+        raise ValueError(
+            f"Unknown source '{source}'. Available: 'csv', 'inline', 'fetch_csv'"
+        )
+
+    out = {**state, "dataset": ds}
+    out.update(ds.to_dict())
+    return out
+
+
+# Backward-compatible alias
+load_targets_step = load_dataset_step
+
+
+# ==================================================================
+# Sklearn / classical ML steps
+# ==================================================================
+
+# ------------------------------------------------------------------
+# Featurize
+# ------------------------------------------------------------------
+
+def featurize_step(state: StateDict) -> StateDict:
+    """
+    Extract numerical features from protein sequences.
+
+    Config keys:
+        features (list[str]): Feature names (default: DEFAULT_FEATURES).
+            See ``molfun.ml.features.AVAILABLE_FEATURES``.
+
+    Requires:
+        state["sequences"]: list of protein sequences (str).
+        OR state["pdb_paths"]: PDB/CIF paths (sequences extracted automatically).
+
+    Produces:
+        state["X"]: np.ndarray feature matrix [N, D].
+        state["feature_names"]: list of feature column names.
+        state["sequences"]: list of sequences (if extracted from PDBs).
+    """
+    from molfun.ml.features import ProteinFeaturizer
+
+    features = state.get("features")
+    featurizer = ProteinFeaturizer(features=features)
+
+    sequences = state.get("sequences")
+    if sequences is None:
+        pdb_paths = state.get("pdb_paths")
+        if pdb_paths is None:
+            raise ValueError("featurize_step requires 'sequences' or 'pdb_paths'")
+        sequences = _extract_sequences(pdb_paths)
+
+    X = featurizer.fit_transform(sequences)
+
+    return {
+        **state,
+        "X": X,
+        "sequences": sequences,
+        "feature_names": featurizer.feature_names,
+        "n_features": featurizer.n_features,
+        "_featurizer": featurizer,
+    }
+
+
+def _extract_sequences(pdb_paths: list) -> list[str]:
+    """Extract sequences from PDB/CIF files using molfun parsers."""
+    from molfun.data.parsers import auto_parser
+
+    sequences = []
+    for p in pdb_paths:
+        parser = auto_parser(str(p))
+        parsed = parser.parse_file(str(p))
+        sequences.append(parsed.sequence)
+    return sequences
+
+
+# ------------------------------------------------------------------
+# Split for sklearn
+# ------------------------------------------------------------------
+
+def split_sklearn_step(state: StateDict) -> StateDict:
+    """
+    Split features + targets into train/test for sklearn.
+
+    Config keys:
+        val_frac (float):   Validation fraction (default 0.2).
+        seed (int):         Random seed (default 42).
+
+    Requires:
+        state["X"]: feature matrix.
+        state["y"]: target array.
+
+    Produces:
+        state["X_train"], state["X_test"], state["y_train"], state["y_test"]
+        state["sequences_train"], state["sequences_test"] (if sequences present)
+    """
+    from sklearn.model_selection import train_test_split
+    import numpy as np
+
+    X = state["X"]
+    y = np.asarray(state["y"])
+    val_frac = state.get("val_frac", 0.2)
+    seed = state.get("seed", 42)
+
+    sequences = state.get("sequences")
+
+    if sequences is not None:
+        X_tr, X_te, y_tr, y_te, seq_tr, seq_te = train_test_split(
+            X, y, sequences, test_size=val_frac, random_state=seed,
+        )
+        return {
+            **state,
+            "X_train": X_tr, "X_test": X_te,
+            "y_train": y_tr, "y_test": y_te,
+            "sequences_train": seq_tr, "sequences_test": seq_te,
+        }
+    else:
+        X_tr, X_te, y_tr, y_te = train_test_split(
+            X, y, test_size=val_frac, random_state=seed,
+        )
+        return {
+            **state,
+            "X_train": X_tr, "X_test": X_te,
+            "y_train": y_tr, "y_test": y_te,
+        }
+
+
+# ------------------------------------------------------------------
+# Train sklearn
+# ------------------------------------------------------------------
+
+def train_sklearn_step(state: StateDict) -> StateDict:
+    """
+    Train a classical ML model (sklearn-compatible).
+
+    Config keys:
+        estimator (str):     "random_forest", "svm", "linear", etc.
+        task (str):          "regression" or "classification" (default "regression").
+        scale (bool):        Apply StandardScaler (default True).
+        features (list[str]): Feature names (only if no featurizer in state).
+        **:                  Extra params passed to the sklearn estimator.
+
+    Requires:
+        state["X_train"], state["y_train"] (pre-featurized)
+        OR state["sequences_train"], state["y_train"] (featurized on-the-fly)
+
+    Produces:
+        state["model"]: fitted ProteinRegressor or ProteinClassifier.
+    """
+    estimator = state.get("estimator", "random_forest")
+    task = state.get("task", "regression")
+    scale = state.get("scale", True)
+    features = state.get("features")
+
+    estimator_params = {}
+    for k in ("n_estimators", "max_depth", "kernel", "C", "gamma",
+              "alpha", "max_iter", "n_neighbors", "learning_rate"):
+        if k in state:
+            estimator_params[k] = state[k]
+
+    if task == "classification":
+        from molfun.ml.estimators import ProteinClassifier
+        model = ProteinClassifier(
+            estimator=estimator, features=features,
+            scale=scale, **estimator_params,
+        )
+    else:
+        from molfun.ml.estimators import ProteinRegressor
+        model = ProteinRegressor(
+            estimator=estimator, features=features,
+            scale=scale, **estimator_params,
+        )
+
+    sequences_train = state.get("sequences_train")
+    X_train = state.get("X_train")
+    y_train = state["y_train"]
+
+    if sequences_train is not None:
+        model.fit(sequences_train, y_train)
+    elif X_train is not None:
+        model._fit_precomputed(X_train, y_train)
+    else:
+        raise ValueError("train_sklearn_step requires 'X_train' or 'sequences_train'")
+
+    return {**state, "model": model}
+
+
+# ------------------------------------------------------------------
+# Eval sklearn
+# ------------------------------------------------------------------
+
+def eval_sklearn_step(state: StateDict) -> StateDict:
+    """
+    Evaluate a trained sklearn model.
+
+    Requires:
+        state["model"]: fitted ProteinRegressor or ProteinClassifier.
+        state["X_test"] + state["y_test"]
+        OR state["sequences_test"] + state["y_test"]
+
+    Produces:
+        state["eval_metrics"]: dict of metrics.
+    """
+    import numpy as np
+
+    model = state["model"]
+    sequences_test = state.get("sequences_test")
+    X_test_features = state.get("X_test")
+    y_test = np.asarray(state["y_test"])
+
+    if sequences_test is not None:
+        X_test = sequences_test
+    elif X_test_features is not None:
+        X_test = X_test_features
+    else:
+        raise ValueError("eval_sklearn_step requires 'X_test' or 'sequences_test'")
+
+    if hasattr(model, "evaluate"):
+        metrics = model.evaluate(X_test, y_test)
+    else:
+        preds = model.predict(X_test)
+        metrics = {
+            "score": float(model.score(X_test, y_test)),
+            "n_samples": len(y_test),
+        }
+
+    top = []
+    if hasattr(model, "top_features"):
+        top = model.top_features(10)
+    if top:
+        metrics["top_features"] = {name: round(imp, 4) for name, imp in top}
+
+    return {**state, "eval_metrics": metrics}
+
+
+# ------------------------------------------------------------------
+# Save sklearn
+# ------------------------------------------------------------------
+
+def save_sklearn_step(state: StateDict) -> StateDict:
+    """
+    Save a trained sklearn model to disk.
+
+    Config keys:
+        model_path (str): Output path (default "runs/model.joblib").
+
+    Requires:
+        state["model"]
+
+    Produces:
+        state["model_path"]
+    """
+    model = state["model"]
+    model_path = state.get("model_path", "runs/model.joblib")
+
+    from molfun.ml.io import save_model
+    save_model(model, model_path)
+
+    return {**state, "model_path": model_path}
+
+
+# ==================================================================
+# Property head steps (backbone embeddings + head)
+# ==================================================================
+
+def extract_embeddings_step(state: StateDict) -> StateDict:
+    """
+    Extract embeddings from a structure model backbone.
+
+    Config keys:
+        backbone (str):   Model name (default "openfold").
+        layer (str):      Which layer ("last", "middle", etc.).
+        pooling (str):    "mean", "max", or "cls" (default "mean").
+        device (str):     "cpu" or "cuda" (default "cpu").
+        batch_size (int): Batch size for inference (default 4).
+
+    Requires:
+        state["pdb_paths"]: list of PDB/CIF file paths.
+
+    Produces:
+        state["embeddings"]: np.ndarray [N, embedding_dim].
+    """
+    from molfun.ml.heads import extract_embeddings
+
+    pdb_paths = state.get("pdb_paths")
+    if pdb_paths is None:
+        raise ValueError("extract_embeddings_step requires 'pdb_paths'")
+
+    embeddings = extract_embeddings(
+        pdb_paths,
+        backbone=state.get("backbone", state.get("model_name", "openfold")),
+        layer=state.get("layer", "last"),
+        pooling=state.get("pooling", "mean"),
+        device=state.get("device", "cpu"),
+        batch_size=state.get("batch_size", 4),
+    )
+
+    return {**state, "embeddings": embeddings}
+
+
+def train_head_step(state: StateDict) -> StateDict:
+    """
+    Train a property prediction head on backbone embeddings.
+
+    Config keys:
+        head_type (str):      "mlp", "linear", "rf", "svm" (default "mlp").
+        task (str):           "regression" or "classification".
+        hidden_dims (list):   MLP hidden layers (default [256, 128]).
+        epochs (int):         MLP training epochs (default 100).
+        lr (float):           MLP learning rate (default 1e-3).
+        device (str):         "cpu" or "cuda".
+        **:                   Extra params for the head constructor.
+
+    Requires:
+        state["embeddings"] or state["pdb_paths"]
+        state["y_train"] (targets for training split)
+        OR state["y"] (if no split done yet)
+
+    Produces:
+        state["model"]: fitted PropertyHead.
+    """
+    from molfun.ml.heads import PropertyHead
+
+    head_type = state.get("head_type", "mlp")
+    task = state.get("task", "regression")
+    backbone = state.get("backbone", state.get("model_name", "openfold"))
+    device = state.get("device", "cpu")
+
+    head_params = {}
+    for k in ("hidden_dims", "epochs", "lr", "batch_size",
+              "n_estimators", "n_classes", "kernel", "C"):
+        if k in state:
+            head_params[k] = state[k]
+
+    head = PropertyHead(
+        backbone=backbone,
+        head_type=head_type,
+        task=task,
+        hidden_dims=head_params.pop("hidden_dims", [256, 128]),
+        device=device,
+        **head_params,
+    )
+
+    embeddings = state.get("embeddings_train", state.get("embeddings"))
+    y = state.get("y_train", state.get("y"))
+    pdb_paths = state.get("pdb_paths_train", state.get("pdb_paths"))
+
+    if y is None:
+        raise ValueError("train_head_step requires 'y_train' or 'y'")
+
+    head.fit(pdb_paths=pdb_paths or [], y=y, embeddings=embeddings)
+    return {**state, "model": head}
+
+
+def eval_head_step(state: StateDict) -> StateDict:
+    """
+    Evaluate a trained property head.
+
+    Requires:
+        state["model"]: fitted PropertyHead.
+        state["embeddings_test"] or state["pdb_paths_test"]
+        state["y_test"]
+
+    Produces:
+        state["eval_metrics"]: dict of metrics.
+    """
+    import numpy as np
+
+    model = state["model"]
+    y_test = np.asarray(state["y_test"])
+
+    embeddings = state.get("embeddings_test")
+    pdb_paths = state.get("pdb_paths_test")
+
+    preds = model.predict(pdb_paths=pdb_paths, embeddings=embeddings)
+    preds = np.asarray(preds, dtype=np.float64)
+
+    if model.task == "regression":
+        mae = float(np.abs(preds - y_test).mean())
+        rmse = float(np.sqrt(((preds - y_test) ** 2).mean()))
+        ss_res = np.sum((y_test - preds) ** 2)
+        ss_tot = np.sum((y_test - y_test.mean()) ** 2)
+        r2 = float(1 - ss_res / max(ss_tot, 1e-8))
+        metrics = {"mae": mae, "rmse": rmse, "r2": r2, "n_samples": len(y_test)}
+    else:
+        accuracy = float((preds == y_test).mean())
+        metrics = {"accuracy": accuracy, "n_samples": len(y_test)}
+
+    return {**state, "eval_metrics": metrics}

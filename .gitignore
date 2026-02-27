@@ -220,3 +220,6 @@ runs/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Internal research docs (not for public repo)
+docs/research.md

@@ -106,10 +106,11 @@ class TestPipeline:
             PipelineStep("a", add_one, config={"k": 1}),
         ])
         desc = p.describe()
-        assert len(desc) == 1
-        assert desc[0]["name"] == "a"
-        assert desc[0]["config"] == {"k": 1}
-        assert "add_one" in desc[0]["fn"]
+        assert desc["type"] == "custom"
+        assert len(desc["steps"]) == 1
+        assert desc["steps"][0]["name"] == "a"
+        assert desc["steps"][0]["config"] == {"k": 1}
+        assert "add_one" in desc["steps"][0]["fn"]
 
 
 # ── Run from / resume ────────────────────────────────────────────────

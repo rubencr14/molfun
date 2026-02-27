@@ -1,6 +1,8 @@
 # Kinase fine-tuning recipe
 # Usage: molfun run recipes/kinase_finetune.yaml --device cuda
 
+type: finetune
+model: openfold
 checkpoint_dir: runs/kinase_experiment
 
 steps:
