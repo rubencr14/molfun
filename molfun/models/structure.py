@@ -468,6 +468,74 @@ class MolfunStructureModel:
         return instance
 
     # ------------------------------------------------------------------
+    # Export
+    # ------------------------------------------------------------------
+
+    def export_onnx(
+        self,
+        path: str,
+        seq_len: int = 256,
+        opset_version: int = 17,
+        simplify: bool = False,
+        device: str = "cpu",
+    ) -> Path:
+        """
+        Export model to ONNX format for optimized inference.
+
+        Merge LoRA weights first if applicable::
+
+            model.merge()
+            model.export_onnx("model.onnx")
+
+        Args:
+            path: Output .onnx file path.
+            seq_len: Dummy sequence length for tracing.
+            opset_version: ONNX opset version.
+            simplify: Run onnx-simplifier after export.
+            device: Device for tracing ("cpu" recommended).
+
+        Returns:
+            Path to the exported file.
+        """
+        from molfun.export.onnx import export_onnx
+        return export_onnx(
+            self, path, seq_len=seq_len,
+            opset_version=opset_version, simplify=simplify, device=device,
+        )
+
+    def export_torchscript(
+        self,
+        path: str,
+        seq_len: int = 256,
+        mode: str = "trace",
+        optimize: bool = True,
+        device: str = "cpu",
+    ) -> Path:
+        """
+        Export model to TorchScript for deployment without Python.
+
+        Merge LoRA weights first if applicable::
+
+            model.merge()
+            model.export_torchscript("model.pt")
+
+        Args:
+            path: Output .pt file path.
+            seq_len: Dummy sequence length for tracing.
+            mode: "trace" (default) or "script".
+            optimize: Apply inference optimizations.
+            device: Device for tracing.
+
+        Returns:
+            Path to the exported file.
+        """
+        from molfun.export.torchscript import export_torchscript
+        return export_torchscript(
+            self, path, seq_len=seq_len,
+            mode=mode, optimize=optimize, device=device,
+        )
+
+    # ------------------------------------------------------------------
     # Registry queries
     # ------------------------------------------------------------------
 

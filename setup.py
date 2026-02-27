@@ -60,6 +60,10 @@ setup(
         "hub": [
             "huggingface_hub>=0.19.0",
         ],
+        "export": [
+            "onnx>=1.14.0",
+            "onnxruntime>=1.15.0",
+        ],
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
