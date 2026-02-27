@@ -221,5 +221,6 @@ runs/
 .coverage
 htmlcov/
 
-# Internal research docs (not for public repo)
+# Internal docs (not for public repo)
 docs/research.md
+docs/business.md
