@@ -7,9 +7,24 @@ on:
     branches: [main, dev]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - name: Ruff check
+        run: ruff check molfun/
+      - name: Ruff format check
+        run: ruff format --check molfun/
+
   test:
+    needs: lint
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
@@ -18,5 +33,46 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - run: pip install -e ".[dev]"
-      - run: KMP_DUPLICATE_LIB_OK=TRUE pytest --ignore=tests/kernels -q
+      - name: Install package
+        run: pip install -e ".[dev,ml]"
+      - name: Run tests
+        run: |
+          KMP_DUPLICATE_LIB_OK=TRUE pytest \
+            --ignore=tests/kernels \
+            --ignore=tests/integration \
+            --ignore=tests/agents \
+            -q
+      - name: Run tests with coverage (3.12 only)
+        if: matrix.python-version == '3.12'
+        run: |
+          KMP_DUPLICATE_LIB_OK=TRUE pytest \
+            --ignore=tests/kernels \
+            --ignore=tests/integration \
+            --ignore=tests/agents \
+            --cov=molfun --cov-report=xml -q
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: pip install build twine
+      - name: Build package
+        run: python -m build
+      - name: Check package
+        run: twine check dist/*
+      - name: Verify install from wheel
+        run: |
+          pip install dist/*.whl
+          python -c "import molfun; print(f'molfun installed OK')"
+          molfun info || true

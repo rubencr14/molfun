@@ -4,12 +4,19 @@ setup(
     name="molfun",
     version="0.2.0",
     description="Fine-tuning, modular architecture and GPU acceleration for molecular ML models",
-    long_description=open("README.md").read(),
+    long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     author="Rubén Cañadas",
+    author_email="rubencr14@gmail.com",
     url="https://github.com/rubencr14/molfun",
+    project_urls={
+        "Documentation": "https://github.com/rubencr14/molfun#readme",
+        "Bug Tracker": "https://github.com/rubencr14/molfun/issues",
+        "Source": "https://github.com/rubencr14/molfun",
+    },
     license="Apache-2.0",
-    packages=find_packages(),
+    packages=find_packages(exclude=["tests", "tests.*"]),
+    package_data={"molfun": ["py.typed"]},
     python_requires=">=3.10",
     install_requires=[
         "torch>=2.0.0",
@@ -19,6 +26,10 @@ setup(
         "numpy>=1.24.0",
     ],
     extras_require={
+        "ml": [
+            "scikit-learn>=1.3.0",
+            "joblib>=1.3.0",
+        ],
         "kernels": [
             "triton>=2.0.0",
         ],
@@ -67,23 +78,35 @@ setup(
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
+            "ruff>=0.4.0",
+        ],
+        "all": [
+            "scikit-learn>=1.3.0",
+            "joblib>=1.3.0",
+            "peft>=0.6.0",
+            "huggingface_hub>=0.19.0",
+            "onnx>=1.14.0",
+            "onnxruntime>=1.15.0",
+            "fsspec>=2023.1.0",
         ],
     },
     entry_points={
         "console_scripts": [
-            "molfun = molfun.cli:app",
+            "molfun=molfun.cli:app",
         ],
     },
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Science/Research",
         "License :: OSI Approved :: Apache Software License",
+        "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
         "Topic :: Scientific/Engineering :: Bio-Informatics",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
+        "Operating System :: OS Independent",
+        "Typing :: Typed",
     ],
-    package_dir={"": "."},
-    package_data={},
 )
