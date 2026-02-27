@@ -76,6 +76,7 @@ class IPAStructureModule(BaseStructureModule):
         pair: torch.Tensor,
         aatype: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
+        **kwargs,
     ) -> StructureModuleOutput:
         B, L, _ = single.shape
 

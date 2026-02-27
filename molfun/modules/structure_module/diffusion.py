@@ -6,8 +6,7 @@ RFdiffusion and AlphaFold3's diffusion head. Instead of deterministic
 refinement (IPA), this module learns to denoise Gaussian-corrupted
 coordinates conditioned on single/pair representations.
 
-This is a research scaffold — not a full reimplementation of RFdiffusion.
-The architecture is intentionally simple so researchers can experiment
+Architecture is intentionally simple so researchers can experiment
 with different noise schedules, conditioning mechanisms, and
 network architectures.
 """
@@ -104,27 +103,38 @@ class DiffusionStructureModule(BaseStructureModule):
         pair: torch.Tensor,
         aatype: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
+        gt_coords: Optional[torch.Tensor] = None,
     ) -> StructureModuleOutput:
-        B, L, _ = single.shape
-
+        """
+        Args:
+            single: Per-residue features [B, L, D_single].
+            pair:   Pairwise features    [B, L, L, D_pair].
+            aatype: Residue types        [B, L] (int64, optional).
+            mask:   Residue mask         [B, L] (optional).
+            gt_coords: Ground-truth Cα coordinates [B, L, 3].
+                       Required for training. During inference this is
+                       ignored and coordinates are generated from noise.
+        """
         if self.training:
-            return self._forward_train(single, pair, mask)
+            return self._forward_train(single, pair, mask, gt_coords=gt_coords)
         return self._forward_inference(single, pair, mask)
 
     def _forward_train(
         self, single: torch.Tensor, pair: torch.Tensor,
         mask: Optional[torch.Tensor],
+        gt_coords: Optional[torch.Tensor] = None,
     ) -> StructureModuleOutput:
-        """
-        Training: noise GT coords and predict x0.
-
-        NOTE: In a real training loop, GT coords would come from the batch.
-        Here we generate dummy targets for the scaffold.
-        """
+        """Training: noise GT coords and learn to predict x0."""
         B, L, _ = single.shape
         device = single.device
 
-        x0 = torch.randn(B, L, 3, device=device)
+        if gt_coords is not None:
+            x0 = gt_coords
+        else:
+            x0 = torch.randn(B, L, 3, device=device)
+
+        if mask is not None:
+            x0 = x0 * mask.unsqueeze(-1)
 
         t = torch.randint(0, self.n_steps, (B,), device=device)
         alpha_t = self.alphas_cumprod[t].view(B, 1, 1)

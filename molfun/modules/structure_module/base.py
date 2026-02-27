@@ -52,6 +52,7 @@ class BaseStructureModule(ABC, nn.Module):
         pair: torch.Tensor,
         aatype: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
+        **kwargs,
     ) -> StructureModuleOutput:
         """
         Predict 3D coordinates from representations.
@@ -61,6 +62,8 @@ class BaseStructureModule(ABC, nn.Module):
             pair:   Pairwise features    [B, L, L, D_pair].
             aatype: Residue types        [B, L] (int64, 0-20).
             mask:   Residue mask         [B, L] (1 = valid).
+            **kwargs: Subclass-specific args (e.g. ``gt_coords`` for
+                      diffusion training).
 
         Returns:
             StructureModuleOutput with predicted coordinates.

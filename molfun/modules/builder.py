@@ -177,8 +177,12 @@ class BuiltModel(BaseAdapter):
         confidence = None
 
         if pair is not None:
+            sm_kwargs = {"aatype": aatype}
+            gt = batch.get("all_atom_positions", batch.get("gt_coords"))
+            if gt is not None:
+                sm_kwargs["gt_coords"] = gt
             sm_out = self.structure_module(
-                single_repr, pair, aatype=aatype,
+                single_repr, pair, **sm_kwargs,
             )
             structure_coords = sm_out.positions
             confidence = sm_out.confidence
