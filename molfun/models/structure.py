@@ -114,12 +114,33 @@ class MolfunStructureModel:
         self._peft: Optional[MolfunPEFT] = None
         self._strategy: Optional[FinetuneStrategy] = None
 
+        self._config = config
+
         self.head: Optional[nn.Module] = None
         if head:
-            head_cls = HEAD_REGISTRY.get(head)
-            if head_cls is None:
-                raise ValueError(f"Unknown head: {head}. Available: {list(HEAD_REGISTRY)}")
-            self.head = head_cls(**(head_config or {})).to(device)
+            self.head = self._build_head(head, head_config or {})
+
+    def _build_head(self, head: str, head_config: dict) -> nn.Module:
+        """Resolve head class and inject loss_config for structure heads."""
+        head_cls = HEAD_REGISTRY.get(head)
+        if head_cls is None:
+            raise ValueError(f"Unknown head: {head}. Available: {list(HEAD_REGISTRY)}")
+        hcfg = dict(head_config)
+        if head == "structure" and "loss_config" not in hcfg:
+            hcfg["loss_config"] = self._resolve_loss_config()
+        return head_cls(**hcfg).to(self.device)
+
+    def _resolve_loss_config(self):
+        """Extract loss config from stored config or adapter model."""
+        if self._config is not None and hasattr(self._config, "loss"):
+            return self._config.loss
+        model_cfg = getattr(self.adapter.model, "config", None)
+        if model_cfg is not None and hasattr(model_cfg, "loss"):
+            return model_cfg.loss
+        raise ValueError(
+            "Structure head requires loss_config. Use from_pretrained() "
+            "or pass loss_config explicitly in head_config."
+        )
 
     # ------------------------------------------------------------------
     # Pretrained loading
@@ -320,6 +341,8 @@ class MolfunStructureModel:
         val_loader: Optional[DataLoader] = None,
         strategy: Optional[FinetuneStrategy] = None,
         epochs: int = 10,
+        gradient_checkpointing: bool = False,
+        tracker=None,
     ) -> list[dict]:
         """
         Fine-tune the model using the given strategy.
@@ -329,6 +352,8 @@ class MolfunStructureModel:
             val_loader: Validation data (optional).
             strategy: FinetuneStrategy instance (HeadOnly, LoRA, Partial, Full).
             epochs: Number of training epochs.
+            gradient_checkpointing: Trade compute for VRAM (~40-60% savings).
+            tracker: Optional BaseTracker (e.g. ExperimentRegistry) for logging.
 
         Returns:
             List of per-epoch metric dicts.
@@ -343,7 +368,11 @@ class MolfunStructureModel:
             raise RuntimeError(
                 "No head configured. Pass head='affinity' or head='structure'."
             )
-        return self._strategy.fit(self, train_loader, val_loader, epochs)
+        return self._strategy.fit(
+            self, train_loader, val_loader, epochs,
+            gradient_checkpointing=gradient_checkpointing,
+            tracker=tracker,
+        )
 
     # ------------------------------------------------------------------
     # Save / load
@@ -436,12 +465,10 @@ class MolfunStructureModel:
         instance.adapter = adapter.to(device)
         instance._peft = None
         instance._strategy = None
+        instance._config = None
         instance.head = None
         if head:
-            head_cls = HEAD_REGISTRY.get(head)
-            if head_cls is None:
-                raise ValueError(f"Unknown head: {head}. Available: {list(HEAD_REGISTRY)}")
-            instance.head = head_cls(**(head_config or {})).to(device)
+            instance.head = instance._build_head(head, head_config or {})
         return instance
 
     # ------------------------------------------------------------------

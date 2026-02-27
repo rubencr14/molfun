@@ -47,6 +47,7 @@ class StructureDataset(Dataset):
         self,
         pdb_paths: list[str | Path],
         labels: Optional[dict[str, float]] = None,
+        featurizer=None,
         features_dir: Optional[str | Path] = None,
         msa_provider=None,
         max_seq_len: int = 512,
@@ -54,6 +55,7 @@ class StructureDataset(Dataset):
     ):
         self.paths = [Path(p) for p in pdb_paths]
         self.labels = labels or {}
+        self.featurizer = featurizer
         self.features_dir = Path(features_dir) if features_dir else None
         self.msa_provider = msa_provider
         self.max_seq_len = max_seq_len
@@ -101,6 +103,9 @@ class StructureDataset(Dataset):
             pkl_path = self.features_dir / f"{pdb_id}.pkl"
             if pkl_path.exists():
                 return self._load_pickle(pkl_path)
+
+        if self.featurizer is not None:
+            return self.featurizer.from_pdb(self.paths[idx])
 
         features = self._parse_structure(self.paths[idx])
 

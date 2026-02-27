@@ -215,6 +215,18 @@ Thumbs.db
 # Training runs
 runs/
 
+# Experiment registry (local experiment folders)
+.experiments/
+
+# Model checkpoints
+checkpoints/
+
+# Downloaded PDB / dataset files
+data/kinases/
+data/pdbs/
+
+scripts/data/
+
 # Project specific
 *.pyc
 .pytest_cache/

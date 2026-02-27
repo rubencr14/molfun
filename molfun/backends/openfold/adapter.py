@@ -80,7 +80,10 @@ class OpenFoldAdapter(BaseAdapter):
         Returns:
             TrunkOutput with single_repr, pair_repr, structure_coords, confidence.
         """
-        outputs = self.model(batch)
+        if self.training:
+            outputs = self._forward_training(batch)
+        else:
+            outputs = self.model(batch)
 
         confidence = None
         if "plddt" in outputs:
@@ -104,6 +107,23 @@ class OpenFoldAdapter(BaseAdapter):
                 "_raw_outputs": outputs,
             },
         )
+
+    def _forward_training(self, batch: dict) -> dict:
+        """Forward with patched compute_tm to avoid AMP underflow crash."""
+        from openfold.model import heads as _heads
+        _orig = _heads.compute_tm
+
+        def _safe_compute_tm(logits, **kw):
+            try:
+                return _orig(logits, **kw)
+            except (IndexError, RuntimeError):
+                return logits.new_tensor(0.0)
+
+        _heads.compute_tm = _safe_compute_tm
+        try:
+            return self.model(batch)
+        finally:
+            _heads.compute_tm = _orig
 
     # ------------------------------------------------------------------
     # PEFT targeting

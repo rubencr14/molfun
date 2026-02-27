@@ -27,11 +27,13 @@ Quick start::
 from molfun.tracking.base import BaseTracker
 from molfun.tracking.console import ConsoleTracker
 from molfun.tracking.composite import CompositeTracker
+from molfun.tracking.registry import ExperimentRegistry
 
 __all__ = [
     "BaseTracker",
     "ConsoleTracker",
     "CompositeTracker",
+    "ExperimentRegistry",
 ]
 
 

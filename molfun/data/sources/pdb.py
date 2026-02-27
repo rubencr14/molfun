@@ -629,8 +629,6 @@ class PDBFetcher:
         import copy
         q = copy.deepcopy(query)
         q["request_options"] = {
-            "return_type": "entry",
-            "results_content_type": ["experimental"],
             "paginate": {"start": 0, "rows": max_results},
         }
         q["return_type"] = "entry"
@@ -644,7 +642,13 @@ class PDBFetcher:
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 result = json.loads(resp.read())
-        except urllib.error.HTTPError:
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode()[:200]
+            except Exception:
+                pass
+            logger.warning("RCSB search failed (HTTP %d): %s", e.code, body)
             return 0, []
 
         total = result.get("total_count", 0)
@@ -702,8 +706,18 @@ class PDBFetcher:
 # RCSB query node builders (composable)
 # ------------------------------------------------------------------
 
-def _resolution_node(resolution_max: float) -> dict:
+def _wrap_terminal(terminal: dict) -> dict:
+    """Wrap a terminal node in a service group as required by RCSB Search API v2."""
     return {
+        "type": "group",
+        "logical_operator": "and",
+        "nodes": [terminal],
+        "label": terminal.get("service", "text"),
+    }
+
+
+def _resolution_node(resolution_max: float) -> dict:
+    return _wrap_terminal({
         "type": "terminal",
         "service": "text",
         "parameters": {
@@ -711,11 +725,11 @@ def _resolution_node(resolution_max: float) -> dict:
             "operator": "less_or_equal",
             "value": resolution_max,
         },
-    }
+    })
 
 
 def _pfam_node(pfam_id: str) -> dict:
-    return {
+    return _wrap_terminal({
         "type": "terminal",
         "service": "text",
         "parameters": {
@@ -723,11 +737,11 @@ def _pfam_node(pfam_id: str) -> dict:
             "operator": "exact_match",
             "value": pfam_id,
         },
-    }
+    })
 
 
 def _uniprot_node(uniprot_id: str) -> dict:
-    return {
+    return _wrap_terminal({
         "type": "terminal",
         "service": "text",
         "parameters": {
@@ -738,12 +752,12 @@ def _uniprot_node(uniprot_id: str) -> dict:
             "operator": "exact_match",
             "value": uniprot_id,
         },
-    }
+    })
 
 
 def _ec_node(ec_number: str) -> dict:
     ec_clean = ec_number.rstrip(".*")
-    return {
+    return _wrap_terminal({
         "type": "terminal",
         "service": "text",
         "parameters": {
@@ -751,11 +765,11 @@ def _ec_node(ec_number: str) -> dict:
             "operator": "exact_match",
             "value": ec_clean,
         },
-    }
+    })
 
 
 def _go_node(go_id: str) -> dict:
-    return {
+    return _wrap_terminal({
         "type": "terminal",
         "service": "text",
         "parameters": {
@@ -766,11 +780,11 @@ def _go_node(go_id: str) -> dict:
             "operator": "exact_match",
             "value": go_id,
         },
-    }
+    })
 
 
 def _taxonomy_node(taxonomy_id: int) -> dict:
-    return {
+    return _wrap_terminal({
         "type": "terminal",
         "service": "text",
         "parameters": {
@@ -778,21 +792,21 @@ def _taxonomy_node(taxonomy_id: int) -> dict:
             "operator": "exact_match",
             "value": str(taxonomy_id),
         },
-    }
+    })
 
 
 def _keyword_node(keyword: str) -> dict:
-    return {
+    return _wrap_terminal({
         "type": "terminal",
         "service": "full_text",
         "parameters": {
             "value": keyword,
         },
-    }
+    })
 
 
 def _scop_node(scop_id: str) -> dict:
-    return {
+    return _wrap_terminal({
         "type": "terminal",
         "service": "text",
         "parameters": {
@@ -803,7 +817,7 @@ def _scop_node(scop_id: str) -> dict:
             "operator": "exact_match",
             "value": scop_id,
         },
-    }
+    })
 
 
 # ------------------------------------------------------------------
