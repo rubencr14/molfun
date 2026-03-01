@@ -343,6 +343,9 @@ class MolfunStructureModel:
         epochs: int = 10,
         gradient_checkpointing: bool = False,
         tracker=None,
+        checkpoint_dir: Optional[str] = None,
+        save_every: int = 0,
+        resume_from: Optional[str] = None,
     ) -> list[dict]:
         """
         Fine-tune the model using the given strategy.
@@ -354,6 +357,9 @@ class MolfunStructureModel:
             epochs: Number of training epochs.
             gradient_checkpointing: Trade compute for VRAM (~40-60% savings).
             tracker: Optional BaseTracker (e.g. ExperimentRegistry) for logging.
+            checkpoint_dir: Directory for periodic and best-model checkpoints.
+            save_every: Save a checkpoint every N epochs (0 = only best).
+            resume_from: Path to checkpoint directory to resume training from.
 
         Returns:
             List of per-epoch metric dicts.
@@ -372,6 +378,9 @@ class MolfunStructureModel:
             self, train_loader, val_loader, epochs,
             gradient_checkpointing=gradient_checkpointing,
             tracker=tracker,
+            checkpoint_dir=checkpoint_dir,
+            save_every=save_every,
+            resume_from=resume_from,
         )
 
     # ------------------------------------------------------------------

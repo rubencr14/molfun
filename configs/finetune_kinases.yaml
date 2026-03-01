@@ -1,0 +1,57 @@
+# ─── Fine-tuning config for human kinases (publishable run) ──────────
+#
+# Tuned for RTX 5090 (32GB VRAM). Expected: ~12-20h with early stopping.
+#
+# Usage:
+#   python scripts/finetune_kinases.py
+#   python scripts/finetune_kinases.py --config configs/finetune_kinases.yaml
+#   python scripts/finetune_kinases.py --epochs 5 --max-structures 50  # quick iteration
+
+# ── Model ─────────────────────────────────────────────────────────────
+model:
+  backend: openfold
+  head: structure
+  head_config: {}
+  device: cuda
+
+# ── Data ──────────────────────────────────────────────────────────────
+data:
+  collection: kinases_human
+  max_structures: 200
+  resolution_max: 2.5
+  max_seq_len: 256
+  cache_dir: ./data/kinases
+  val_frac: 0.1
+  test_frac: 0.1
+  split_seed: 42
+
+# ── Training ──────────────────────────────────────────────────────────
+training:
+  strategy: lora
+  epochs: 25
+  rank: 8
+  alpha: 16
+  lr_lora: 5.0e-5
+  lr_head: 5.0e-4
+  weight_decay: 0.01
+  warmup_steps: 150
+  scheduler: cosine
+  grad_accum: 4
+  grad_clip: 1.0
+  amp: false
+  ema_decay: 0.999
+  early_stopping_patience: 5
+  loss_fn: openfold
+  gradient_checkpointing: true
+  save_every: 5              # periodic checkpoint each N epochs (0 = only best)
+  resume_from: null           # path to checkpoint dir to resume from
+
+# ── Output ────────────────────────────────────────────────────────────
+output:
+  checkpoint_dir: ./checkpoints/kinase_lora_v1
+  push_to_hub: null
+
+# ── Storage ───────────────────────────────────────────────────────────
+storage:
+  minio: true
+  registry: true
