@@ -14,6 +14,14 @@ Usage:
 
 from __future__ import annotations
 
+import logging
+import warnings
+
+warnings.filterwarnings("ignore", message="Using a non-tuple sequence for multidimensional indexing")
+warnings.filterwarnings("ignore", message="torch.utils.checkpoint: the use_reentrant parameter")
+warnings.filterwarnings("ignore", message="None of the inputs have requires_grad=True")
+logging.getLogger("torch.fx._symbolic_trace").setLevel(logging.ERROR)
+
 import argparse
 import time
 from pathlib import Path
@@ -24,8 +32,9 @@ from torch.utils.data import DataLoader
 
 from molfun.models import MolfunStructureModel
 from molfun.backends.openfold import OpenFoldFeaturizer
-from molfun.data.collections import fetch_collection
+from molfun.data.collections import fetch_collection, search_collection
 from molfun.data.datasets import StructureDataset
+from molfun.data.sources.pdb import PDBFetcher
 from molfun.data.splits import DataSplitter
 from molfun.training import LoRAFinetune, HeadOnlyFinetune, PartialFinetune, FullFinetune
 from molfun.storage import MinioStorage
@@ -48,7 +57,6 @@ def load_config(path: Path) -> dict:
 
 
 def apply_overrides(cfg: dict, args: argparse.Namespace) -> dict:
-    """CLI flags override YAML values (only if explicitly set)."""
     overrides = {
         ("data", "max_structures"): args.max_structures,
         ("data", "max_seq_len"): args.max_seq_len,
@@ -65,21 +73,18 @@ def apply_overrides(cfg: dict, args: argparse.Namespace) -> dict:
     for (section, key), val in overrides.items():
         if val is not None:
             cfg.setdefault(section, {})[key] = val
-
     if args.minio:
         cfg.setdefault("storage", {})["minio"] = True
     if args.no_registry:
         cfg.setdefault("storage", {})["registry"] = False
     if args.resume_from:
         cfg.setdefault("training", {})["resume_from"] = args.resume_from
-
     return cfg
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="Fine-tune OpenFold on protein collections")
-    p.add_argument("--config", type=Path, default=None,
-                   help=f"YAML config (default: {DEFAULT_CONFIG})")
+    p.add_argument("--config", type=Path, default=None)
     p.add_argument("--max-structures", type=int, default=None)
     p.add_argument("--max-seq-len", type=int, default=None)
     p.add_argument("--epochs", type=int, default=None)
@@ -93,8 +98,7 @@ def parse_args():
     p.add_argument("--minio", action="store_true")
     p.add_argument("--no-registry", action="store_true")
     p.add_argument("--push-to-hub", type=str, default=None)
-    p.add_argument("--resume-from", type=str, default=None,
-                   help="Path to checkpoint dir to resume training from")
+    p.add_argument("--resume-from", type=str, default=None)
     return p.parse_args()
 
 
@@ -116,7 +120,6 @@ def build_strategy(tcfg: dict):
         "early_stopping_patience": tcfg.get("early_stopping_patience", 0),
         "loss_fn": tcfg.get("loss_fn", "mse"),
     }
-
     if name == "lora":
         kwargs.update({
             "rank": tcfg.get("rank", 8),
@@ -125,7 +128,6 @@ def build_strategy(tcfg: dict):
             "lr_head": tcfg.get("lr_head", 1e-3),
         })
         del kwargs["lr"]
-
     return cls(**kwargs)
 
 
@@ -142,43 +144,62 @@ def main():
     ocfg = cfg["output"]
     scfg = cfg.get("storage", {})
 
-    print(f"Config: {config_path}")
-    print()
+    print(f"Config: {config_path}\n")
 
     t0 = time.time()
 
     # ── 1. Data ──────────────────────────────────────────────────────
 
-    storage_opts = None
     cache_dir = dcfg.get("cache_dir", "./data/kinases")
+    collection = dcfg.get("collection", "kinases_human")
+    max_structures = dcfg.get("max_structures", 200)
+    resolution_max = dcfg.get("resolution_max", 2.5)
     storage = None
+
+    print(f"[1/7] Searching RCSB for {collection} (max {max_structures})...")
+    pdb_ids = search_collection(
+        collection,
+        max_structures=max_structures,
+        resolution_max=resolution_max,
+    )
+    print(f"      {len(pdb_ids)} IDs found")
 
     if scfg.get("minio"):
         storage = MinioStorage.from_env()
         storage.ensure_bucket()
-        cache_dir = storage.prefix(dcfg.get("collection", "kinases"))
-        storage_opts = storage.storage_options
-        print(f"[1/7] Fetching → MinIO ({cache_dir})")
+        print(f"      Syncing from MinIO → {cache_dir}")
+        found, missing = storage.sync_ids_to_local(pdb_ids, collection, cache_dir)
+        print(f"      {len(found)} from MinIO, {len(missing)} need RCSB")
+        if missing:
+            PDBFetcher(cache_dir=cache_dir).fetch(missing)
+            print(f"      Downloaded {len(missing)} from RCSB")
+            uploaded = storage.sync_to_remote(cache_dir, collection)
+            if uploaded:
+                print(f"      Uploaded {uploaded} new files to MinIO")
     else:
-        print(f"[1/7] Fetching → {cache_dir}")
+        print(f"      Fetching → {cache_dir}")
+        fetch_collection(
+            collection,
+            max_structures=max_structures,
+            resolution_max=resolution_max,
+            cache_dir=cache_dir,
+        )
+
+    paths = [
+        str(Path(cache_dir) / f"{pid.strip().lower()}.cif")
+        for pid in pdb_ids
+        if (Path(cache_dir) / f"{pid.strip().lower()}.cif").exists()
+    ]
+    print(f"      {len(paths)} structures ready")
 
     registry = None
     if scfg.get("registry", True):
         registry = ExperimentRegistry(storage=storage)
         registry.start_run(
-            name=f"{dcfg.get('collection', 'custom')}-{tcfg.get('strategy', 'lora')}",
-            tags=[tcfg.get("strategy", "lora"), mcfg.get("head", "structure"), dcfg.get("collection", "custom")],
+            name=f"{collection}-{tcfg.get('strategy', 'lora')}",
+            tags=[tcfg.get("strategy", "lora"), mcfg.get("head", "structure"), collection],
             config=cfg,
         )
-
-    paths = fetch_collection(
-        dcfg.get("collection", "kinases_human"),
-        max_structures=dcfg.get("max_structures", 200),
-        resolution_max=dcfg.get("resolution_max", 2.5),
-        cache_dir=cache_dir,
-        storage_options=storage_opts,
-    )
-    print(f"      {len(paths)} structures ready")
     if registry:
         registry.log_pdb_refs(paths)
 
@@ -195,7 +216,6 @@ def main():
         head=head,
         head_config=head_config if head_config else None,
     )
-
     summary = model.summary()
     print(f"      Total: {summary['adapter']['total']:,}  Trainable: {summary['adapter']['trainable']:,}")
 
@@ -209,7 +229,6 @@ def main():
         max_seq_len=max_seq_len,
     )
     dataset = StructureDataset(pdb_paths=paths, featurizer=featurizer)
-
     train_ds, val_ds, test_ds = DataSplitter.random(
         dataset,
         val_frac=dcfg.get("val_frac", 0.1),
@@ -224,20 +243,17 @@ def main():
     # ── 4. Strategy ──────────────────────────────────────────────────
 
     strategy_name = tcfg.get("strategy", "lora")
-    print(f"[4/7] Setting up {strategy_name} (rank={tcfg.get('rank', '-')})...")
+    print(f"[4/7] Strategy: {strategy_name} (rank={tcfg.get('rank', '-')})")
     strategy = build_strategy(tcfg)
 
     # ── 5. Train ─────────────────────────────────────────────────────
 
     epochs = tcfg.get("epochs", 20)
-    print(f"[5/7] Training {epochs} epochs...")
-    print(f"       {'Epoch':>5}  {'Train':>11}  {'Val':>11}")
-    print(f"       {'─'*5}  {'─'*11}  {'─'*11}")
-
     ckpt_dir = ocfg.get("checkpoint_dir", "./checkpoints")
     save_every = tcfg.get("save_every", 0)
     resume_from = tcfg.get("resume_from")
 
+    print(f"[5/7] Training {epochs} epochs → checkpoints: {ckpt_dir}/")
     if resume_from:
         print(f"      Resuming from {resume_from}")
 
@@ -252,10 +268,10 @@ def main():
         resume_from=resume_from,
     )
 
-    # ── 6. Summary ───────────────────────────────────────────────────
+    # ── 6. Checkpoints ───────────────────────────────────────────────
 
     print(f"\n[6/7] Checkpoints → {ckpt_dir}/")
-    print(f"       best/ | last/ | every {save_every} epochs" if save_every else f"       best/ | last/")
+    print(f"       best/ | last/" + (f" | every {save_every} epochs" if save_every else ""))
 
     # ── 7. Test ──────────────────────────────────────────────────────
 
@@ -276,6 +292,7 @@ def main():
         print(f"      Test loss: {avg_loss:.4f} ({len(test_losses)} samples)")
     else:
         print("      No test metrics computed")
+        avg_loss = None
 
     # ── Hub ───────────────────────────────────────────────────────────
 
@@ -284,16 +301,16 @@ def main():
         print(f"\nPushing → {hub_repo}...")
         url = model.push_to_hub(
             hub_repo,
-            metrics={"test_loss": avg_loss} if test_losses else None,
-            dataset_name=f"{dcfg.get('collection')} ({len(paths)} structures)",
+            metrics={"test_loss": avg_loss} if avg_loss else None,
+            dataset_name=f"{collection} ({len(paths)} structures)",
         )
         print(f"Uploaded: {url}")
 
     # ── End ───────────────────────────────────────────────────────────
 
     if registry:
-        if test_losses:
-            registry.log_metrics({"test_loss": sum(test_losses) / len(test_losses)})
+        if avg_loss is not None:
+            registry.log_metrics({"test_loss": avg_loss})
         registry.end_run()
         print(f"\nRegistry: {registry.run_dir}")
         if registry.remote_uri:
@@ -301,7 +318,7 @@ def main():
 
     elapsed = time.time() - t0
     print(f"\nDone in {int(elapsed // 60)}m {int(elapsed % 60)}s.")
-    print(f"Checkpoint: {ckpt_path}")
+    print(f"Checkpoint: {ckpt_dir}/")
 
 
 if __name__ == "__main__":

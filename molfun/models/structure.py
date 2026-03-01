@@ -307,6 +307,37 @@ class MolfunStructureModel:
             "template_sum_probs": torch.zeros(T, 1),
         }
 
+        # Atom mapping features required by OpenFold's atom14_to_atom37.
+        # rc.RESTYPE_ATOM14_TO_ATOM37 and rc.RESTYPE_ATOM37_TO_ATOM14 are
+        # prebuilt tables of shape (21, 14) and (21, 37) indexed by aatype.
+        aa_idx = aatype.clamp(max=20).long()
+
+        atom14_to_atom37_table = torch.tensor(rc.RESTYPE_ATOM14_TO_ATOM37, dtype=torch.long)  # (21,14)
+        atom37_to_atom14_table = torch.tensor(rc.RESTYPE_ATOM37_TO_ATOM14, dtype=torch.long)  # (21,37)
+        atom14_mask_table      = torch.tensor(rc.restype_atom14_mask,       dtype=torch.float32)  # (21,14)
+        atom37_mask_table      = torch.tensor(rc.RESTYPE_ATOM14_MASK if hasattr(rc, "RESTYPE_ATOM14_MASK")
+                                               else rc.restype_atom14_mask,  dtype=torch.float32)
+
+        residx_atom14_to_atom37 = atom14_to_atom37_table[aa_idx]   # (L, 14)
+        residx_atom37_to_atom14 = atom37_to_atom14_table[aa_idx]   # (L, 37)
+        atom14_atom_exists      = atom14_mask_table[aa_idx]         # (L, 14)
+
+        # atom37_atom_exists: mark atom37 slots that exist for each residue
+        atom37_atom_exists = torch.zeros(L, 37, dtype=torch.float32)
+        for i in range(L):
+            for j in range(14):
+                if atom14_atom_exists[i, j] > 0:
+                    a37 = residx_atom14_to_atom37[i, j].item()
+                    if a37 >= 0:
+                        atom37_atom_exists[i, a37] = 1.0
+
+        batch.update({
+            "residx_atom14_to_atom37": residx_atom14_to_atom37,
+            "residx_atom37_to_atom14": residx_atom37_to_atom14,
+            "atom14_atom_exists": atom14_atom_exists,
+            "atom37_atom_exists": atom37_atom_exists,
+        })
+
         skip_recycle = {"seq_length"}
         for k, v in batch.items():
             if k not in skip_recycle and isinstance(v, torch.Tensor):

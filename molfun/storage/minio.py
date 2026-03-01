@@ -110,3 +110,88 @@ class MinioStorage(ObjectStorage):
             raise ConnectionError(
                 f"Cannot connect to MinIO at {self._endpoint}:{self._port} — {e}"
             ) from e
+
+    def _client(self):
+        from minio import Minio
+        return Minio(
+            f"{self._endpoint}:{self._port}",
+            access_key=self._access_key,
+            secret_key=self._secret_key,
+            secure=self._secure,
+        )
+
+    def sync_ids_to_local(
+        self,
+        pdb_ids: list[str],
+        remote_prefix: str,
+        local_dir: str,
+        fmt: str = "cif",
+    ) -> tuple[list[str], list[str]]:
+        """
+        Download specific PDB files from MinIO to local, by ID.
+
+        Only downloads IDs that exist remotely and are missing locally.
+
+        Returns:
+            (found_locally, not_in_minio): lists of PDB IDs.
+            found_locally = IDs now available on disk (pre-existing + downloaded).
+            not_in_minio = IDs that don't exist in MinIO (need RCSB).
+        """
+        from pathlib import Path
+        local = Path(local_dir)
+        local.mkdir(parents=True, exist_ok=True)
+
+        client = self._client()
+        prefix = remote_prefix.lstrip("/")
+
+        found = []
+        missing = []
+        for pid in pdb_ids:
+            pid = pid.strip().lower()
+            local_path = local / f"{pid}.{fmt}"
+            if local_path.exists():
+                found.append(pid)
+                continue
+
+            object_name = f"{prefix}/{pid}.{fmt}"
+            try:
+                client.fget_object(self._bucket, object_name, str(local_path))
+                found.append(pid)
+            except Exception:
+                missing.append(pid)
+
+        return found, missing
+
+    def sync_to_remote(
+        self,
+        local_dir: str,
+        remote_prefix: str,
+        *,
+        glob: str = "*.cif",
+    ) -> int:
+        """
+        Upload local files to a MinIO prefix.
+
+        Only uploads files that don't already exist remotely.
+        Returns number of files uploaded.
+        """
+        from pathlib import Path
+        local = Path(local_dir)
+
+        client = self._client()
+        prefix = remote_prefix.lstrip("/")
+
+        existing = {
+            obj.object_name.split("/")[-1]
+            for obj in client.list_objects(self._bucket, prefix=prefix + "/", recursive=True)
+        }
+
+        uploaded = 0
+        for f in sorted(local.glob(glob)):
+            if f.name in existing:
+                continue
+            object_name = f"{prefix}/{f.name}"
+            client.fput_object(self._bucket, object_name, str(f))
+            uploaded += 1
+
+        return uploaded

@@ -341,6 +341,80 @@ def fetch_collection(
     return fetcher.fetch(pdb_ids)
 
 
+def search_collection(
+    name: str,
+    *,
+    max_structures: Optional[int] = None,
+    resolution_max: Optional[float] = None,
+    deduplicate: bool = False,
+    identity: float = 0.3,
+) -> list[str]:
+    """
+    Search RCSB for PDB IDs matching a collection without downloading.
+
+    Args:
+        name: Collection name (see ``list_collections()``).
+        max_structures: Override collection default max.
+        resolution_max: Override collection default resolution.
+        deduplicate: If True, cluster by sequence and keep one representative.
+        identity: Sequence identity threshold for deduplication.
+
+    Returns:
+        List of PDB IDs (lowercase).
+    """
+    if name not in COLLECTIONS:
+        available = ", ".join(sorted(COLLECTIONS.keys()))
+        raise ValueError(f"Unknown collection '{name}'. Available: {available}")
+
+    spec = COLLECTIONS[name]
+    fetcher = PDBFetcher()
+    max_s = max_structures or spec.default_max
+    res = resolution_max or spec.default_resolution
+
+    kwargs: dict = {}
+    if spec.pfam_id:
+        kwargs["pfam_id"] = spec.pfam_id
+    if spec.ec_number:
+        kwargs["ec_number"] = spec.ec_number
+    if spec.go_id:
+        kwargs["go_id"] = spec.go_id
+    if spec.taxonomy_id:
+        kwargs["taxonomy_id"] = spec.taxonomy_id
+    if spec.keyword:
+        kwargs["keyword"] = spec.keyword
+    if spec.uniprot_ids:
+        kwargs["uniprot_ids"] = spec.uniprot_ids
+
+    if len(kwargs) > 1 or (len(kwargs) == 1 and spec.keyword):
+        pdb_ids = fetcher.search_ids(
+            **kwargs, max_results=max_s, resolution_max=res,
+        )
+    elif spec.pfam_id:
+        pdb_ids = fetcher._search_rcsb(
+            _build_simple_query(spec, res), max_results=max_s,
+        )
+    elif spec.ec_number:
+        pdb_ids = fetcher._search_rcsb(
+            _build_simple_query(spec, res), max_results=max_s,
+        )
+    elif spec.taxonomy_id:
+        pdb_ids = fetcher._search_rcsb(
+            _build_simple_query(spec, res), max_results=max_s,
+        )
+    elif spec.go_id:
+        pdb_ids = fetcher._search_rcsb(
+            _build_simple_query(spec, res), max_results=max_s,
+        )
+    else:
+        raise ValueError(f"Collection '{name}' has no query criteria.")
+
+    if deduplicate and pdb_ids:
+        from molfun.data.sources.pdb import deduplicate_by_sequence
+        pdb_ids = deduplicate_by_sequence(pdb_ids, identity=identity)
+
+    return pdb_ids
+
+
 def count_collection(
     name: str,
     resolution_max: Optional[float] = None,

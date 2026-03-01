@@ -28,7 +28,7 @@ data:
 # ── Training ──────────────────────────────────────────────────────────
 training:
   strategy: lora
-  epochs: 25
+  epochs: 15
   rank: 8
   alpha: 16
   lr_lora: 5.0e-5
