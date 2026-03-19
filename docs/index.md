@@ -7,7 +7,7 @@ hide:
 
 <div class="md-hero" markdown>
 
-# Molfun
+<img src="assets/images/home.png" alt="Molfun" class="hero-image">
 
 **Fine-tune protein structure prediction models with modular, plug-and-play architecture.**
 Swap attention heads, plug in LoRA adapters, track experiments, and export to production

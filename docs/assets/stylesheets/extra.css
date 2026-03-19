@@ -90,6 +90,15 @@
   background: linear-gradient(135deg, var(--ctp-crust) 0%, var(--ctp-base) 40%, #2a1f4e 100%);
 }
 
+.md-hero .hero-image {
+  max-width: 750px;
+  width: 100%;
+  height: auto;
+  margin-bottom: 1.5rem;
+  border-radius: 16px;
+  filter: drop-shadow(0 4px 20px rgba(124, 58, 237, 0.3));
+}
+
 .md-hero h1 {
   font-size: 3.5rem;
   font-weight: 800;
@@ -220,25 +229,31 @@
 
 /* ─── Mermaid diagram overrides ─── */
 
-/* Dark mode: ensure unstyled nodes have light text */
-[data-md-color-scheme="slate"] .mermaid .node rect,
-[data-md-color-scheme="slate"] .mermaid .node circle,
-[data-md-color-scheme="slate"] .mermaid .node polygon {
+/*
+ * Styled nodes set color via inline styles — never override those.
+ * We only style unstyled (default-themed) elements for dark mode.
+ */
+
+/* Dark mode: unstyled node shapes */
+[data-md-color-scheme="slate"] .mermaid .node rect:not([style*="fill"]),
+[data-md-color-scheme="slate"] .mermaid .node circle:not([style*="fill"]),
+[data-md-color-scheme="slate"] .mermaid .node polygon:not([style*="fill"]) {
   fill: var(--ctp-surface0);
   stroke: var(--ctp-surface2);
 }
 
-[data-md-color-scheme="slate"] .mermaid .nodeLabel,
-[data-md-color-scheme="slate"] .mermaid .label {
-  color: var(--ctp-text);
+/* Dark mode: SVG <text> elements (axis labels, arrow text, subgraph titles) */
+[data-md-color-scheme="slate"] .mermaid text:not([style*="fill"]) {
   fill: var(--ctp-text);
 }
 
+/* Dark mode: edge labels */
 [data-md-color-scheme="slate"] .mermaid .edgeLabel {
   background-color: var(--ctp-surface0);
   color: var(--ctp-text);
 }
 
+/* Dark mode: edge paths and arrowheads */
 [data-md-color-scheme="slate"] .mermaid .edgePath .path {
   stroke: var(--ctp-overlay0);
 }
@@ -247,31 +262,24 @@
   fill: var(--ctp-overlay0);
 }
 
+/* Dark mode: subgraph clusters */
 [data-md-color-scheme="slate"] .mermaid .cluster rect {
   fill: var(--ctp-mantle) !important;
   stroke: var(--ctp-surface1) !important;
 }
 
-[data-md-color-scheme="slate"] .mermaid .cluster .nodeLabel,
 [data-md-color-scheme="slate"] .mermaid .cluster span {
   color: var(--ctp-subtext0);
-  fill: var(--ctp-subtext0);
 }
 
-/* Light mode: ensure unstyled nodes have dark text */
-.mermaid .nodeLabel,
-.mermaid .label {
-  color: #1e293b;
-}
-
-.mermaid .edgeLabel {
-  color: #1e293b;
-}
-
-/* Both modes: nodes with inline dark fill must have white text */
-.mermaid [style*="fill: #"][style*="color: rgb(255, 255, 255)"] .nodeLabel,
-.mermaid [style*="fill:#"] .nodeLabel {
-  /* Inline styles from Mermaid take precedence; this is a fallback */
+/* Both modes: force text inside styled nodes to inherit color from parent span */
+.mermaid .nodeLabel span,
+.mermaid .nodeLabel b,
+.mermaid .nodeLabel small,
+.mermaid .nodeLabel i,
+.mermaid .nodeLabel p,
+.mermaid .nodeLabel div {
+  color: inherit !important;
 }
 
 /* ─── Console-style code blocks ─── */
