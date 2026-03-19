@@ -22,23 +22,26 @@ Notes:
 - MDTraj and MDAnalysis are optional dependencies
 """
 
-import torch
 import math
+from typing import Any
+
 import numpy as np
-from typing import List, Dict, Any, Optional
+import torch
 
 from molfun.kernels.analysis.rmsd import rmsd_triton
 
 # Try to import optional dependencies
 try:
-    import mdtraj
+    import mdtraj  # noqa: F401
+
     HAS_MDTRAJ = True
 except ImportError:
     HAS_MDTRAJ = False
 
 try:
-    import MDAnalysis
+    import MDAnalysis  # noqa: F401
     from MDAnalysis.analysis import rms
+
     HAS_MDANALYSIS = True
 except ImportError:
     HAS_MDANALYSIS = False
@@ -47,49 +50,49 @@ except ImportError:
 def rmsd_pytorch(coords_A: torch.Tensor, coords_B: torch.Tensor) -> float:
     """Reference PyTorch implementation of RMSD."""
     diff = coords_A - coords_B
-    dist2 = (diff ** 2).sum(dim=1)  # sum over x, y, z
+    dist2 = (diff**2).sum(dim=1)  # sum over x, y, z
     return math.sqrt(dist2.mean().item())
 
 
 def rmsd_numpy(coords_A: np.ndarray, coords_B: np.ndarray) -> float:
     """Reference NumPy implementation of RMSD."""
     diff = coords_A - coords_B
-    dist2 = np.sum(diff ** 2, axis=1)
+    dist2 = np.sum(diff**2, axis=1)
     return np.sqrt(np.mean(dist2))
 
 
 def rmsd_mdtraj(coords_A: np.ndarray, coords_B: np.ndarray) -> float:
     """
     Compute RMSD using MDTraj.
-    
+
     Note: MDTraj expects coordinates in nm, but for benchmarking purposes
     we just use arbitrary units since we're comparing speed, not absolute values.
     MDTraj also expects shape (n_frames, n_atoms, 3).
     """
     if not HAS_MDTRAJ:
-        return float('nan')
-    
+        return float("nan")
+
     # MDTraj expects (n_frames, n_atoms, 3)
     # For single frame comparison, reshape accordingly
-    coords_A_mdtraj = coords_A.reshape(1, -1, 3).astype(np.float32)
-    coords_B_mdtraj = coords_B.reshape(1, -1, 3).astype(np.float32)
-    
+    coords_A.reshape(1, -1, 3).astype(np.float32)
+    coords_B.reshape(1, -1, 3).astype(np.float32)
+
     # MDTraj's rmsd function needs a topology, but for simple coordinate RMSD
     # we can compute it directly
     diff = coords_A - coords_B
-    dist2 = np.sum(diff ** 2, axis=1)
+    dist2 = np.sum(diff**2, axis=1)
     return np.sqrt(np.mean(dist2))
 
 
 def rmsd_mdanalysis(coords_A: np.ndarray, coords_B: np.ndarray) -> float:
     """
     Compute RMSD using MDAnalysis.
-    
+
     Note: MDAnalysis's rms.rmsd function computes RMSD between two coordinate arrays.
     """
     if not HAS_MDANALYSIS:
-        return float('nan')
-    
+        return float("nan")
+
     # MDAnalysis expects (n_atoms, 3)
     return rms.rmsd(coords_A, coords_B, superposition=False)
 
@@ -118,20 +121,20 @@ def time_it_cuda(fn, iters: int, warmup: int) -> float:
 def time_it_cpu(fn, iters: int, warmup: int) -> float:
     """Time a CPU function using time.perf_counter."""
     import time
-    
+
     # Warmup
     for _ in range(warmup):
         _ = fn()
-    
+
     start = time.perf_counter()
     for _ in range(iters):
         _ = fn()
     end = time.perf_counter()
-    
+
     return (end - start) * 1000 / iters  # ms
 
 
-def run_benchmark() -> List[Dict[str, Any]]:
+def run_benchmark() -> list[dict[str, Any]]:
     """Execute benchmark and return structured results."""
     assert torch.cuda.is_available(), "CUDA required"
     torch.set_grad_enabled(False)
@@ -148,7 +151,7 @@ def run_benchmark() -> List[Dict[str, Any]]:
     ]
 
     results = []
-    
+
     print(f"Dependencies: MDTraj={HAS_MDTRAJ}, MDAnalysis={HAS_MDANALYSIS}")
     print("-" * 100)
 
@@ -156,16 +159,14 @@ def run_benchmark() -> List[Dict[str, Any]]:
         # Generate random 3D coordinates (simulating protein structures)
         coords_A_gpu = torch.randn(N, 3, device="cuda", dtype=torch.float32)
         coords_B_gpu = torch.randn(N, 3, device="cuda", dtype=torch.float32)
-        
+
         # CPU/NumPy versions for MDTraj/MDAnalysis
         coords_A_cpu = coords_A_gpu.cpu().numpy()
         coords_B_cpu = coords_B_gpu.cpu().numpy()
 
         # --- PyTorch (GPU) timing ---
         t_pytorch = time_it_cuda(
-            lambda: rmsd_pytorch(coords_A_gpu, coords_B_gpu),
-            iters=100,
-            warmup=20
+            lambda: rmsd_pytorch(coords_A_gpu, coords_B_gpu), iters=100, warmup=20
         )
 
         # --- Triton timing ---
@@ -174,37 +175,27 @@ def run_benchmark() -> List[Dict[str, Any]]:
         torch.cuda.synchronize()
 
         t_triton = time_it_cuda(
-            lambda: rmsd_triton(coords_A_gpu, coords_B_gpu),
-            iters=100,
-            warmup=20
+            lambda: rmsd_triton(coords_A_gpu, coords_B_gpu), iters=100, warmup=20
         )
 
         # --- NumPy (CPU) timing ---
-        t_numpy = time_it_cpu(
-            lambda: rmsd_numpy(coords_A_cpu, coords_B_cpu),
-            iters=100,
-            warmup=20
-        )
+        t_numpy = time_it_cpu(lambda: rmsd_numpy(coords_A_cpu, coords_B_cpu), iters=100, warmup=20)
 
         # --- MDTraj timing (if available) ---
         if HAS_MDTRAJ:
             t_mdtraj = time_it_cpu(
-                lambda: rmsd_mdtraj(coords_A_cpu, coords_B_cpu),
-                iters=100,
-                warmup=20
+                lambda: rmsd_mdtraj(coords_A_cpu, coords_B_cpu), iters=100, warmup=20
             )
         else:
-            t_mdtraj = float('nan')
+            t_mdtraj = float("nan")
 
         # --- MDAnalysis timing (if available) ---
         if HAS_MDANALYSIS:
             t_mdanalysis = time_it_cpu(
-                lambda: rmsd_mdanalysis(coords_A_cpu, coords_B_cpu),
-                iters=100,
-                warmup=20
+                lambda: rmsd_mdanalysis(coords_A_cpu, coords_B_cpu), iters=100, warmup=20
             )
         else:
-            t_mdanalysis = float('nan')
+            t_mdanalysis = float("nan")
 
         # --- Correctness check ---
         rmsd_ref = rmsd_pytorch(coords_A_gpu, coords_B_gpu)
@@ -212,10 +203,16 @@ def run_benchmark() -> List[Dict[str, Any]]:
         diff = abs(rmsd_ref - rmsd_tri)
 
         # Calculate speedups
-        speedup_vs_pytorch = t_pytorch / t_triton if t_triton > 0 else float("inf")
+        t_pytorch / t_triton if t_triton > 0 else float("inf")
         speedup_vs_numpy = t_numpy / t_triton if t_triton > 0 else float("inf")
-        speedup_vs_mdtraj = t_mdtraj / t_triton if t_triton > 0 and not math.isnan(t_mdtraj) else float("nan")
-        speedup_vs_mdanalysis = t_mdanalysis / t_triton if t_triton > 0 and not math.isnan(t_mdanalysis) else float("nan")
+        speedup_vs_mdtraj = (
+            t_mdtraj / t_triton if t_triton > 0 and not math.isnan(t_mdtraj) else float("nan")
+        )
+        speedup_vs_mdanalysis = (
+            t_mdanalysis / t_triton
+            if t_triton > 0 and not math.isnan(t_mdanalysis)
+            else float("nan")
+        )
 
         result = {
             "benchmark_name": "rmsd",
@@ -233,44 +230,54 @@ def run_benchmark() -> List[Dict[str, Any]]:
                 "mdtraj_ms": round(t_mdtraj, 4) if not math.isnan(t_mdtraj) else None,
                 "mdanalysis_ms": round(t_mdanalysis, 4) if not math.isnan(t_mdanalysis) else None,
                 "speedup_vs_numpy": round(speedup_vs_numpy, 2),
-                "speedup_vs_mdtraj": round(speedup_vs_mdtraj, 2) if not math.isnan(speedup_vs_mdtraj) else None,
-                "speedup_vs_mdanalysis": round(speedup_vs_mdanalysis, 2) if not math.isnan(speedup_vs_mdanalysis) else None,
+                "speedup_vs_mdtraj": round(speedup_vs_mdtraj, 2)
+                if not math.isnan(speedup_vs_mdtraj)
+                else None,
+                "speedup_vs_mdanalysis": round(speedup_vs_mdanalysis, 2)
+                if not math.isnan(speedup_vs_mdanalysis)
+                else None,
                 "rmsd_pytorch": round(rmsd_ref, 6),
                 "rmsd_triton": round(rmsd_tri, 6),
                 "dtype": str(coords_A_gpu.dtype),
                 "device": str(coords_A_gpu.device),
-            }
+            },
         }
         results.append(result)
 
         # Print summary for this case
         mdtraj_str = f"{t_mdtraj:.4f}" if not math.isnan(t_mdtraj) else "N/A"
         mdanalysis_str = f"{t_mdanalysis:.4f}" if not math.isnan(t_mdanalysis) else "N/A"
-        
-        print(f"N={N:6d} | PyTorch: {t_pytorch:.4f}ms | Triton: {t_triton:.4f}ms | "
-              f"NumPy: {t_numpy:.4f}ms | MDTraj: {mdtraj_str}ms | MDAnalysis: {mdanalysis_str}ms | "
-              f"Speedup(vs NumPy): {speedup_vs_numpy:.1f}x | diff: {diff:.2e}")
+
+        print(
+            f"N={N:6d} | PyTorch: {t_pytorch:.4f}ms | Triton: {t_triton:.4f}ms | "
+            f"NumPy: {t_numpy:.4f}ms | MDTraj: {mdtraj_str}ms | MDAnalysis: {mdanalysis_str}ms | "
+            f"Speedup(vs NumPy): {speedup_vs_numpy:.1f}x | diff: {diff:.2e}"
+        )
 
     return results
 
 
 def main():
     results = run_benchmark()
-    
+
     print("\n" + "=" * 120)
     print("RMSD Benchmark: Triton vs PyTorch vs NumPy vs MDTraj vs MDAnalysis")
     print("=" * 120)
-    print(f"{'N':>8} | {'PyTorch':>10} | {'Triton':>10} | {'NumPy':>10} | {'MDTraj':>10} | {'MDAnalysis':>10} | {'vs NumPy':>10} | {'Diff':>10}")
+    print(
+        f"{'N':>8} | {'PyTorch':>10} | {'Triton':>10} | {'NumPy':>10} | {'MDTraj':>10} | {'MDAnalysis':>10} | {'vs NumPy':>10} | {'Diff':>10}"
+    )
     print("-" * 120)
-    
+
     for result in results:
         meta = result["metadata"]
-        mdtraj_str = f"{meta['mdtraj_ms']:.4f}" if meta['mdtraj_ms'] else "N/A"
-        mdanalysis_str = f"{meta['mdanalysis_ms']:.4f}" if meta['mdanalysis_ms'] else "N/A"
-        
-        print(f"{meta['N']:8d} | {meta['pytorch_ms']:10.4f} | {meta['triton_ms']:10.4f} | "
-              f"{meta['numpy_ms']:10.4f} | {mdtraj_str:>10} | {mdanalysis_str:>10} | "
-              f"{meta['speedup_vs_numpy']:10.1f}x | {result['max_diff']:10.2e}")
+        mdtraj_str = f"{meta['mdtraj_ms']:.4f}" if meta["mdtraj_ms"] else "N/A"
+        mdanalysis_str = f"{meta['mdanalysis_ms']:.4f}" if meta["mdanalysis_ms"] else "N/A"
+
+        print(
+            f"{meta['N']:8d} | {meta['pytorch_ms']:10.4f} | {meta['triton_ms']:10.4f} | "
+            f"{meta['numpy_ms']:10.4f} | {mdtraj_str:>10} | {mdanalysis_str:>10} | "
+            f"{meta['speedup_vs_numpy']:10.1f}x | {result['max_diff']:10.2e}"
+        )
 
 
 if __name__ == "__main__":

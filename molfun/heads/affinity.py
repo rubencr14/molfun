@@ -1,18 +1,18 @@
 """Binding affinity prediction head (∆G regression)."""
 
 from __future__ import annotations
-from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from molfun.core.types import TrunkOutput
-from molfun.losses.affinity import MSELoss, HuberLoss, MAELoss, PearsonLoss
+from molfun.losses.affinity import HuberLoss, MAELoss, MSELoss, PearsonLoss
 
 _AFFINITY_LOSSES = {
-    "mse":     MSELoss,
-    "mae":     MAELoss,
-    "huber":   HuberLoss,
+    "mse": MSELoss,
+    "mae": MAELoss,
+    "huber": HuberLoss,
     "pearson": PearsonLoss,
 }
 
@@ -20,10 +20,10 @@ _AFFINITY_LOSSES = {
 class AffinityHead(nn.Module):
     """
     Predicts binding affinity (∆G or pK) from structural representations.
-    
+
     Takes the single representation from TrunkOutput, pools over residues,
     and regresses to a scalar affinity value per sample.
-    
+
     Supports:
     - Mean pooling (default), attention-weighted pooling
     - Optional pair representation fusion
@@ -74,7 +74,7 @@ class AffinityHead(nn.Module):
                 layers.append(nn.Dropout(dropout))
         self.mlp = nn.Sequential(*layers)
 
-    def _pool(self, single: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def _pool(self, single: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
         """Pool over residue dimension: [B, L, D] → [B, D]."""
         if self.pool == "attention" and self.attn_weight is not None:
             # Attention-weighted pooling
@@ -93,14 +93,14 @@ class AffinityHead(nn.Module):
     def forward(
         self,
         trunk_output: TrunkOutput,
-        mask: Optional[torch.Tensor] = None,
-        batch: Optional[dict] = None,
+        mask: torch.Tensor | None = None,
+        batch: dict | None = None,
     ) -> torch.Tensor:
         """
         Args:
             trunk_output: Normalized output from model adapter.
             mask: [B, L] residue mask (1 = valid, 0 = padding).
-        
+
         Returns:
             Predictions: [B, output_dim].
         """

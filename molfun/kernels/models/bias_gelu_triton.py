@@ -16,12 +16,12 @@ import triton.language as tl
 # This is the actual Triton kernel. Each "program" (think: a CUDA block) will process a tile of elements.
 @triton.jit
 def bias_gelu_kernel(
-    x_ptr,                              # pointer to input tensor x (flattened)
-    b_ptr,                              # pointer to bias vector b (size = D)
-    y_ptr,                              # pointer to output tensor y (same shape as x)
-    n_elements: tl.constexpr,           # total number of elements in x (flattened)
-    D: tl.constexpr,                    # last dimension size (hidden size)
-    BLOCK: tl.constexpr,                # how many elements this program processes
+    x_ptr,  # pointer to input tensor x (flattened)
+    b_ptr,  # pointer to bias vector b (size = D)
+    y_ptr,  # pointer to output tensor y (same shape as x)
+    n_elements: tl.constexpr,  # total number of elements in x (flattened)
+    D: tl.constexpr,  # last dimension size (hidden size)
+    BLOCK: tl.constexpr,  # how many elements this program processes
 ):
     # Program id: unique integer identifying which "block" we are (like blockIdx.x in CUDA)
     pid = tl.program_id(axis=0)
@@ -106,13 +106,13 @@ def bias_gelu_triton(x: torch.Tensor, bias: torch.Tensor, block: int = 1024) -> 
 
     # Launch kernel
     bias_gelu_kernel[grid](
-        x_flat,                         # input pointer
-        bias,                           # bias pointer
-        y,                              # output pointer
-        n_elements=n_elements,          # total number of elements
-        D=D,                            # hidden size for bias indexing
-        BLOCK=block,                    # tile size
-        num_warps=4,                    # a reasonable default; tune later
+        x_flat,  # input pointer
+        bias,  # bias pointer
+        y,  # output pointer
+        n_elements=n_elements,  # total number of elements
+        D=D,  # hidden size for bias indexing
+        BLOCK=block,  # tile size
+        num_warps=4,  # a reasonable default; tune later
     )
 
     # Reshape output back to original x shape

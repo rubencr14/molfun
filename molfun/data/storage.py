@@ -34,10 +34,10 @@ Usage::
 """
 
 from __future__ import annotations
+
+import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional
-import os
 
 _HAS_FSSPEC = None
 
@@ -47,6 +47,7 @@ def _check_fsspec():
     if _HAS_FSSPEC is None:
         try:
             import fsspec  # noqa: F401
+
             _HAS_FSSPEC = True
         except ImportError:
             _HAS_FSSPEC = False
@@ -58,7 +59,7 @@ def is_remote(path: str) -> bool:
     return "://" in str(path) and not str(path).startswith("file://")
 
 
-def _get_fs(path: str, storage_options: Optional[dict] = None):
+def _get_fs(path: str, storage_options: dict | None = None):
     """Get an fsspec filesystem for the given path."""
     if not _check_fsspec():
         raise ImportError(
@@ -66,6 +67,7 @@ def _get_fs(path: str, storage_options: Optional[dict] = None):
             "Install with: pip install 'molfun[streaming]'"
         )
     import fsspec
+
     opts = storage_options or {}
     return fsspec.core.url_to_fs(path, **opts)
 
@@ -74,7 +76,7 @@ def _get_fs(path: str, storage_options: Optional[dict] = None):
 def open_path(
     path: str,
     mode: str = "r",
-    storage_options: Optional[dict] = None,
+    storage_options: dict | None = None,
 ):
     """
     Open a file from any fsspec-supported filesystem.
@@ -105,7 +107,7 @@ def open_path(
 
 def list_files(
     pattern: str,
-    storage_options: Optional[dict] = None,
+    storage_options: dict | None = None,
 ) -> list[str]:
     """
     List files matching a glob pattern on any filesystem.
@@ -133,7 +135,7 @@ def list_files(
 
 def exists(
     path: str,
-    storage_options: Optional[dict] = None,
+    storage_options: dict | None = None,
 ) -> bool:
     """Check if a file or directory exists on any filesystem."""
     if not is_remote(str(path)):
@@ -145,7 +147,7 @@ def exists(
 
 def ensure_dir(
     path: str,
-    storage_options: Optional[dict] = None,
+    storage_options: dict | None = None,
 ) -> None:
     """Create a directory (and parents) on any filesystem."""
     if not is_remote(str(path)):
@@ -159,7 +161,7 @@ def ensure_dir(
 def download_to_local(
     remote_path: str,
     local_path: str,
-    storage_options: Optional[dict] = None,
+    storage_options: dict | None = None,
 ) -> Path:
     """
     Download a remote file to a local path.

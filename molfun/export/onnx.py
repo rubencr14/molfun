@@ -15,8 +15,8 @@ Usage::
 """
 
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -45,7 +45,7 @@ def export_onnx(
     path: str,
     seq_len: int = 256,
     opset_version: int = 17,
-    dynamic_axes: Optional[dict] = None,
+    dynamic_axes: dict | None = None,
     simplify: bool = False,
     check: bool = True,
     device: str = "cpu",
@@ -73,10 +73,7 @@ def export_onnx(
     try:
         import onnx
     except ImportError:
-        raise ImportError(
-            "ONNX export requires the 'onnx' package. "
-            "Install with: pip install onnx"
-        )
+        raise ImportError("ONNX export requires the 'onnx' package. Install with: pip install onnx")
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -113,6 +110,7 @@ def export_onnx(
     if simplify:
         try:
             import onnxsim
+
             onnx_model = onnx.load(str(path))
             simplified, ok = onnxsim.simplify(onnx_model)
             if ok:

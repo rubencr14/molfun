@@ -6,14 +6,16 @@ Falls back to a lightweight built-in implementation when PEFT is not installed.
 """
 
 from __future__ import annotations
+
 import math
-from typing import Optional, Union
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 try:
-    from peft import LoraConfig, IA3Config, get_peft_model, PeftModel
+    from peft import IA3Config, LoraConfig, PeftModel, get_peft_model
+
     HAS_PEFT = True
 except ImportError:
     HAS_PEFT = False
@@ -23,13 +25,16 @@ except ImportError:
 # Built-in LoRA (zero dependencies)
 # =========================================================================
 
+
 class LoRALinear(nn.Module):
     """
     Drop-in replacement for nn.Linear with low-rank adaptation.
     W_effective = W_frozen + (alpha/rank) * A @ B
     """
 
-    def __init__(self, original: nn.Linear, rank: int = 8, alpha: float = 16.0, dropout: float = 0.0):
+    def __init__(
+        self, original: nn.Linear, rank: int = 8, alpha: float = 16.0, dropout: float = 0.0
+    ):
         super().__init__()
         self.in_features = original.in_features
         self.out_features = original.out_features
@@ -46,9 +51,11 @@ class LoRALinear(nn.Module):
             torch.empty(rank, self.in_features, device=self.weight.device, dtype=self.weight.dtype)
         )
         self.lora_B = nn.Parameter(
-            torch.zeros(self.out_features, rank, device=self.weight.device, dtype=self.weight.dtype) #initialize the LoRA B matrix to 0
+            torch.zeros(
+                self.out_features, rank, device=self.weight.device, dtype=self.weight.dtype
+            )  # initialize the LoRA B matrix to 0
         )
-        nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5)) #randomly initialize the LoRA matrix
+        nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))  # randomly initialize the LoRA matrix
         self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
         self._merged = False
 
@@ -74,27 +81,28 @@ class LoRALinear(nn.Module):
 # Unified PEFT wrapper
 # =========================================================================
 
+
 class MolfunPEFT:
     """
     Unified PEFT interface. Uses HuggingFace PEFT when available,
     falls back to built-in LoRALinear otherwise.
-    
+
     Supports: LoRA, IA³ (via HF PEFT), built-in LoRA (fallback).
-    
+
     Usage:
         adapter = OpenFoldAdapter(model=model)
-        
+
         # LoRA
         peft = MolfunPEFT.lora(rank=8, target_modules=["linear_q", "linear_v"])
         peft.apply(adapter.model.evoformer)
-        
+
         # IA³ (requires HF PEFT)
         peft = MolfunPEFT.ia3(target_modules=["linear_v"], feedforward_modules=["ff_linear1"])
         peft.apply(adapter.model.evoformer)
-        
+
         # Training: only adapted params
         optimizer = torch.optim.Adam(peft.trainable_parameters(), lr=1e-4)
-        
+
         # Export: merge into base weights
         peft.merge()
     """
@@ -108,8 +116,8 @@ class MolfunPEFT:
         self.method = method
         self.config = config
         self.use_hf = use_hf and HAS_PEFT
-        self._model: Optional[nn.Module] = None
-        self._peft_model: Optional[PeftModel] = None
+        self._model: nn.Module | None = None
+        self._peft_model: PeftModel | None = None
         self._builtin_layers: list[tuple[nn.Module, str, LoRALinear]] = []
 
     # ------------------------------------------------------------------
@@ -122,7 +130,7 @@ class MolfunPEFT:
         rank: int = 8,
         alpha: float = 16.0,
         dropout: float = 0.0,
-        target_modules: Optional[list[str]] = None,
+        target_modules: list[str] | None = None,
         use_hf: bool = True,
     ) -> MolfunPEFT:
         """Create a LoRA adapter."""
@@ -141,8 +149,8 @@ class MolfunPEFT:
     @classmethod
     def ia3(
         cls,
-        target_modules: Optional[list[str]] = None,
-        feedforward_modules: Optional[list[str]] = None,
+        target_modules: list[str] | None = None,
+        feedforward_modules: list[str] | None = None,
     ) -> MolfunPEFT:
         """Create an IA³ adapter (requires HuggingFace PEFT)."""
         if not HAS_PEFT:
@@ -165,10 +173,10 @@ class MolfunPEFT:
     def apply(self, model: nn.Module) -> nn.Module:
         """
         Apply PEFT method to the model. Freezes base params automatically.
-        
+
         Args:
             model: nn.Module to adapt (e.g. adapter.model or adapter.model.evoformer).
-            
+
         Returns:
             The adapted model (may be wrapped by PeftModel if using HF backend).
         """
@@ -275,7 +283,6 @@ class MolfunPEFT:
     def load(self, path: str) -> None:
         """Load PEFT adapter weights."""
         if self._peft_model is not None:
-            from peft import PeftModel as PM
             self._peft_model.load_adapter(path, adapter_name="default")
         else:
             state = torch.load(path, map_location="cpu", weights_only=True)
@@ -292,7 +299,11 @@ class MolfunPEFT:
         return "huggingface_peft" if (self._peft_model is not None) else "builtin"
 
     def summary(self) -> dict:
-        total = sum(p.numel() for p in (self._peft_model or self._model).parameters()) if (self._peft_model or self._model) else 0
+        total = (
+            sum(p.numel() for p in (self._peft_model or self._model).parameters())
+            if (self._peft_model or self._model)
+            else 0
+        )
         trainable = self.trainable_param_count()
         return {
             "method": self.method,

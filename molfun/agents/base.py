@@ -7,15 +7,15 @@ recovery, and experiment persistence.
 """
 
 from __future__ import annotations
-from abc import ABC, abstractmethod
-from typing import Optional
-import json
-import time
-import logging
 
-from molfun.agents.llm.base import BaseLLM, LLMResponse
-from molfun.agents.tools import MolfunTools
+import json
+import logging
+import time
+from abc import ABC, abstractmethod
+
+from molfun.agents.llm.base import BaseLLM
 from molfun.agents.memory import ExperimentMemory
+from molfun.agents.tools import MolfunTools
 from molfun.tracking.base import BaseTracker
 
 logger = logging.getLogger(__name__)
@@ -52,9 +52,9 @@ class BaseAgent(ABC):
         self,
         llm: BaseLLM,
         tools: MolfunTools,
-        memory: Optional[ExperimentMemory] = None,
-        config: Optional[AgentConfig] = None,
-        tracker: Optional[BaseTracker] = None,
+        memory: ExperimentMemory | None = None,
+        config: AgentConfig | None = None,
+        tracker: BaseTracker | None = None,
     ):
         self.llm = llm
         self.tools = tools
@@ -97,8 +97,11 @@ class BaseAgent(ABC):
             self.tracker.start_run(
                 name=f"agent-{type(self).__name__}",
                 tags=["agent"],
-                config={"objective": objective, "llm": str(self.llm),
-                        "max_steps": self.config.max_steps},
+                config={
+                    "objective": objective,
+                    "llm": str(self.llm),
+                    "max_steps": self.config.max_steps,
+                },
             )
 
         while step < self.config.max_steps:
@@ -122,7 +125,7 @@ class BaseAgent(ABC):
                 if consecutive_errors >= self.config.max_consecutive_errors:
                     self._log("Max consecutive errors reached. Stopping.")
                     break
-                time.sleep(2 ** consecutive_errors)
+                time.sleep(2**consecutive_errors)
                 continue
 
             consecutive_errors = 0
@@ -152,22 +155,30 @@ class BaseAgent(ABC):
 
                     self._log(f"        Result ({elapsed:.1f}s): {_truncate(result, 200)}")
 
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": result,
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": result,
+                        }
+                    )
 
                     # Persist experiment if one was just completed
                     exp = self.tools.get_last_experiment()
                     if exp is not None:
                         self.memory.log_experiment(exp)
                         if self.tracker is not None:
-                            self.tracker.log_metrics({
-                                "experiment_count": self.memory.count,
-                                **({"best_val_loss": exp.best_val_loss}
-                                   if exp.best_val_loss is not None else {}),
-                            }, step=self.memory.count)
+                            self.tracker.log_metrics(
+                                {
+                                    "experiment_count": self.memory.count,
+                                    **(
+                                        {"best_val_loss": exp.best_val_loss}
+                                        if exp.best_val_loss is not None
+                                        else {}
+                                    ),
+                                },
+                                step=self.memory.count,
+                            )
                         self.tools.clear_last_experiment()
 
             elif response.text:
@@ -194,7 +205,7 @@ class BaseAgent(ABC):
     # Context and memory management
     # ------------------------------------------------------------------
 
-    def _build_context_message(self) -> Optional[dict]:
+    def _build_context_message(self) -> dict | None:
         """Build a system message with current experiment memory."""
         if self.memory.count == 0:
             return None
@@ -246,9 +257,11 @@ class BaseAgent(ABC):
         self._log("\n" + "=" * 60)
         self._log("AGENT RUN COMPLETE")
         self._log("=" * 60)
-        self._log(f"Experiments: {self.memory.count} total, "
-                   f"{len(self.memory.completed)} completed, "
-                   f"{len(self.memory.failed)} failed")
+        self._log(
+            f"Experiments: {self.memory.count} total, "
+            f"{len(self.memory.completed)} completed, "
+            f"{len(self.memory.failed)} failed"
+        )
         best = self.memory.best()
         if best:
             self._log(f"Best: {best.summary_line()}")

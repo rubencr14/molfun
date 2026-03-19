@@ -3,17 +3,22 @@ CLI command for running pipeline recipes.
 """
 
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
 
 def run(
     recipe: Annotated[Path, typer.Argument(help="Path to YAML recipe file.")],
-    from_step: Annotated[Optional[str], typer.Option("--from", help="Resume from this step.")] = None,
-    state_file: Annotated[Optional[Path], typer.Option("--state", help="Load state from JSON (for --from).")] = None,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Print steps without executing.")] = False,
+    from_step: Annotated[str | None, typer.Option("--from", help="Resume from this step.")] = None,
+    state_file: Annotated[
+        Path | None, typer.Option("--state", help="Load state from JSON (for --from).")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print steps without executing.")
+    ] = False,
     device: Annotated[str, typer.Option(help="Override device for all steps.")] = "cpu",
     workers: Annotated[int, typer.Option("-w", help="Override download workers.")] = 4,
     verbose: Annotated[bool, typer.Option("-v", help="Verbose logging.")] = False,
@@ -42,7 +47,9 @@ def run(
             skip = " [SKIP]" if step.skip else ""
             config_preview = ""
             if step.config:
-                items = [f"{k}={v}" for k, v in step.config.items() if k not in ("device", "workers")]
+                items = [
+                    f"{k}={v}" for k, v in step.config.items() if k not in ("device", "workers")
+                ]
                 if items:
                     config_preview = f"  ({', '.join(items[:5])})"
             typer.echo(f"  {i}. {step.name}{skip}{config_preview}")
@@ -52,6 +59,7 @@ def run(
     state = {}
     if state_file and state_file.exists():
         import json
+
         state = json.loads(state_file.read_text())
         typer.echo(f"Loaded state from {state_file} ({len(state)} keys)")
 
@@ -78,7 +86,7 @@ def run(
 
     metrics = result.get("eval_metrics")
     if metrics:
-        typer.echo(f"\n  Eval metrics:")
+        typer.echo("\n  Eval metrics:")
         for k, v in metrics.items():
             if isinstance(v, float):
                 typer.echo(f"    {k:20s}: {v:.6f}")

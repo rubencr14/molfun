@@ -6,14 +6,13 @@ them as structured records ready for dataset construction.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
+
 import csv
 import re
+from dataclasses import dataclass, field
+from pathlib import Path
 
-from molfun.data.storage import open_path, ensure_dir
-
+from molfun.data.storage import ensure_dir, open_path
 
 _DEFAULT_CACHE = Path.home() / ".molfun" / "affinity_cache"
 
@@ -21,9 +20,10 @@ _DEFAULT_CACHE = Path.home() / ".molfun" / "affinity_cache"
 @dataclass
 class AffinityRecord:
     """Single protein-ligand affinity entry."""
+
     pdb_id: str
-    affinity: float             # -log(Kd/Ki) or kcal/mol depending on source
-    affinity_unit: str = "pK"   # "pK" | "kcal"
+    affinity: float  # -log(Kd/Ki) or kcal/mol depending on source
+    affinity_unit: str = "pK"  # "pK" | "kcal"
     resolution: float = 0.0
     year: int = 0
     ligand_name: str = ""
@@ -53,7 +53,7 @@ class AffinityFetcher:
         refined = fetcher.filter(records, resolution_max=2.5, min_year=2015)
     """
 
-    def __init__(self, cache_dir: Optional[str] = None, storage_options: Optional[dict] = None):
+    def __init__(self, cache_dir: str | None = None, storage_options: dict | None = None):
         self.cache_dir = str(cache_dir) if cache_dir else str(_DEFAULT_CACHE)
         self.storage_options = storage_options
         ensure_dir(self.cache_dir, storage_options=storage_options)
@@ -65,7 +65,7 @@ class AffinityFetcher:
     @staticmethod
     def from_pdbbind_index(
         index_path: str,
-        storage_options: Optional[dict] = None,
+        storage_options: dict | None = None,
     ) -> list[AffinityRecord]:
         """
         Parse a PDBbind INDEX file (local or remote).
@@ -92,7 +92,7 @@ class AffinityFetcher:
         resolution_col: str = "resolution",
         sequence_col: str = "sequence",
         delimiter: str = ",",
-        storage_options: Optional[dict] = None,
+        storage_options: dict | None = None,
     ) -> list[AffinityRecord]:
         """
         Load affinity records from a CSV file (local or remote).
@@ -103,14 +103,19 @@ class AffinityFetcher:
         with open_path(csv_path, "r", storage_options) as f:
             reader = csv.DictReader(f, delimiter=delimiter)
             for row in reader:
-                records.append(AffinityRecord(
-                    pdb_id=row[pdb_col].strip().lower(),
-                    affinity=float(row[affinity_col]),
-                    resolution=float(row.get(resolution_col, 0) or 0),
-                    sequence=row.get(sequence_col, "") or "",
-                    metadata={k: v for k, v in row.items()
-                              if k not in (pdb_col, affinity_col, resolution_col, sequence_col)},
-                ))
+                records.append(
+                    AffinityRecord(
+                        pdb_id=row[pdb_col].strip().lower(),
+                        affinity=float(row[affinity_col]),
+                        resolution=float(row.get(resolution_col, 0) or 0),
+                        sequence=row.get(sequence_col, "") or "",
+                        metadata={
+                            k: v
+                            for k, v in row.items()
+                            if k not in (pdb_col, affinity_col, resolution_col, sequence_col)
+                        },
+                    )
+                )
         return records
 
     # ------------------------------------------------------------------
@@ -120,9 +125,9 @@ class AffinityFetcher:
     @staticmethod
     def filter(
         records: list[AffinityRecord],
-        resolution_max: Optional[float] = None,
-        min_year: Optional[int] = None,
-        pdb_ids: Optional[set[str]] = None,
+        resolution_max: float | None = None,
+        min_year: int | None = None,
+        pdb_ids: set[str] | None = None,
     ) -> list[AffinityRecord]:
         """Filter records by resolution, year, or PDB ID whitelist."""
         out = records
@@ -146,16 +151,16 @@ class AffinityFetcher:
 # ------------------------------------------------------------------
 
 _PDBBIND_PATTERN = re.compile(
-    r"^(\w{4})\s+"            # PDB code
-    r"([\d.]+)\s+"            # resolution
-    r"(\d{4})\s+"             # year
-    r"([\d.]+)\s+"            # -logKd/Ki
-    r"(\S+)\s+"               # Kd/Ki/IC50=value
-    r"(.*)$"                  # rest (reference, ligand name)
+    r"^(\w{4})\s+"  # PDB code
+    r"([\d.]+)\s+"  # resolution
+    r"(\d{4})\s+"  # year
+    r"([\d.]+)\s+"  # -logKd/Ki
+    r"(\S+)\s+"  # Kd/Ki/IC50=value
+    r"(.*)$"  # rest (reference, ligand name)
 )
 
 
-def _parse_pdbbind_line(line: str) -> Optional[AffinityRecord]:
+def _parse_pdbbind_line(line: str) -> AffinityRecord | None:
     m = _PDBBIND_PATTERN.match(line)
     if m is None:
         return None

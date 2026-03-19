@@ -39,12 +39,10 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import torch
 
 from molfun.tracking.base import BaseTracker
-
 
 _LOCAL_EXPERIMENTS_DIR = Path(".experiments")
 
@@ -60,7 +58,7 @@ class ExperimentRegistry(BaseTracker):
     def __init__(
         self,
         storage=None,
-        local_dir: Optional[str] = None,
+        local_dir: str | None = None,
         run_prefix: str = "experiments",
     ):
         """
@@ -75,33 +73,33 @@ class ExperimentRegistry(BaseTracker):
         self._run_prefix = run_prefix
         self._base_local = Path(local_dir) if local_dir else _LOCAL_EXPERIMENTS_DIR
 
-        self._run_id: Optional[str] = None
-        self._run_dir: Optional[Path] = None
+        self._run_id: str | None = None
+        self._run_dir: Path | None = None
         self._metrics: list[dict] = []
         self._manifest: dict = {}
-        self._start_time: Optional[float] = None
+        self._start_time: float | None = None
 
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
 
     @property
-    def run_id(self) -> Optional[str]:
+    def run_id(self) -> str | None:
         return self._run_id
 
     @property
-    def run_dir(self) -> Optional[Path]:
+    def run_dir(self) -> Path | None:
         return self._run_dir
 
     @property
-    def checkpoint_path(self) -> Optional[str]:
+    def checkpoint_path(self) -> str | None:
         """Path where model.save() should write the checkpoint."""
         if self._run_dir is None:
             return None
         return str(self._run_dir / "checkpoint")
 
     @property
-    def remote_uri(self) -> Optional[str]:
+    def remote_uri(self) -> str | None:
         """Remote URI for this run (if storage configured)."""
         if self._storage is None or self._run_id is None:
             return None
@@ -113,9 +111,9 @@ class ExperimentRegistry(BaseTracker):
 
     def start_run(
         self,
-        name: Optional[str] = None,
-        tags: Optional[list[str]] = None,
-        config: Optional[dict] = None,
+        name: str | None = None,
+        tags: list[str] | None = None,
+        config: dict | None = None,
     ) -> None:
         self._run_id = str(uuid.uuid4())
         self._run_dir = self._base_local / self._run_id
@@ -147,14 +145,14 @@ class ExperimentRegistry(BaseTracker):
         self._manifest["config"].update(config)
         self._write_json("manifest.json", self._manifest)
 
-    def log_metrics(self, metrics: dict, step: Optional[int] = None) -> None:
+    def log_metrics(self, metrics: dict, step: int | None = None) -> None:
         if self._run_dir is None:
             self.start_run()
         entry = {"step": step, **{k: round(float(v), 6) for k, v in metrics.items()}}
         self._metrics.append(entry)
         self._write_json("metrics.json", self._metrics)
 
-    def log_artifact(self, path: str, name: Optional[str] = None) -> None:
+    def log_artifact(self, path: str, name: str | None = None) -> None:
         """Record an artifact path in the manifest (does not copy files)."""
         if self._run_dir is None:
             self.start_run()
@@ -195,10 +193,7 @@ class ExperimentRegistry(BaseTracker):
         """
         if self._run_dir is None:
             self.start_run()
-        refs = [
-            {"pdb_id": Path(p).stem.split(".")[0].upper(), "path": str(p)}
-            for p in paths
-        ]
+        refs = [{"pdb_id": Path(p).stem.split(".")[0].upper(), "path": str(p)} for p in paths]
         self._write_json("pdb_refs.json", refs)
 
     # ------------------------------------------------------------------
@@ -230,9 +225,13 @@ class ExperimentRegistry(BaseTracker):
                 uploaded += 1
             except Exception as e:
                 import logging
+
                 logging.getLogger(__name__).warning(
                     "Failed to upload %s → %s/%s: %s",
-                    local_file.name, bucket, object_name, e,
+                    local_file.name,
+                    bucket,
+                    object_name,
+                    e,
                 )
 
         print(f"Synced {uploaded} files → s3://{bucket}/{prefix}/")

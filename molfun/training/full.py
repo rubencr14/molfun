@@ -11,7 +11,6 @@ while later (task-specific) layers adapt faster.
 """
 
 from __future__ import annotations
-from typing import Optional
 
 from molfun.training.base import FinetuneStrategy
 
@@ -41,9 +40,9 @@ class FullFinetune(FinetuneStrategy):
     def __init__(
         self,
         layer_lr_decay: float = 0.95,
-        lr_head: Optional[float] = None,
-        lr_embedder: Optional[float] = None,
-        lr_structure_module: Optional[float] = None,
+        lr_head: float | None = None,
+        lr_embedder: float | None = None,
+        lr_structure_module: float | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -64,7 +63,7 @@ class FullFinetune(FinetuneStrategy):
 
         lr_embedder = self._lr_embedder_override
         if lr_embedder is None:
-            lr_embedder = self.lr * self.layer_lr_decay ** n_blocks
+            lr_embedder = self.lr * self.layer_lr_decay**n_blocks
 
         seen = set()
         groups = []
@@ -90,10 +89,7 @@ class FullFinetune(FinetuneStrategy):
             if params:
                 groups.append({"params": params, "lr": self.lr_structure_module})
 
-        remaining = [
-            p for p in model.adapter.parameters()
-            if p.requires_grad and id(p) not in seen
-        ]
+        remaining = [p for p in model.adapter.parameters() if p.requires_grad and id(p) not in seen]
         if remaining:
             groups.append({"params": remaining, "lr": self.lr})
 
@@ -104,10 +100,12 @@ class FullFinetune(FinetuneStrategy):
 
     def describe(self) -> dict:
         d = super().describe()
-        d.update({
-            "layer_lr_decay": self.layer_lr_decay,
-            "lr_head": self.lr_head,
-            "lr_embedder": self._lr_embedder_override,
-            "lr_structure_module": self.lr_structure_module,
-        })
+        d.update(
+            {
+                "layer_lr_decay": self.layer_lr_decay,
+                "lr_head": self.lr_head,
+                "lr_embedder": self._lr_embedder_override,
+                "lr_structure_module": self.lr_structure_module,
+            }
+        )
         return d

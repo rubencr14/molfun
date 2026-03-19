@@ -12,17 +12,16 @@ network architectures.
 """
 
 from __future__ import annotations
-from typing import Optional
+
 import math
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from molfun.modules.structure_module.base import (
+    STRUCTURE_MODULE_REGISTRY,
     BaseStructureModule,
     StructureModuleOutput,
-    STRUCTURE_MODULE_REGISTRY,
 )
 
 
@@ -68,10 +67,9 @@ class DiffusionStructureModule(BaseStructureModule):
             nn.Linear(d_model, d_model),
         )
 
-        self.layers = nn.ModuleList([
-            _DenoisingLayer(d_model, n_heads=8, dropout=0.1)
-            for _ in range(n_layers)
-        ])
+        self.layers = nn.ModuleList(
+            [_DenoisingLayer(d_model, n_heads=8, dropout=0.1) for _ in range(n_layers)]
+        )
 
         self.out_proj = nn.Linear(d_model, 3)
         self.norm = nn.LayerNorm(d_model)
@@ -101,9 +99,9 @@ class DiffusionStructureModule(BaseStructureModule):
         self,
         single: torch.Tensor,
         pair: torch.Tensor,
-        aatype: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
-        gt_coords: Optional[torch.Tensor] = None,
+        aatype: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
+        gt_coords: torch.Tensor | None = None,
     ) -> StructureModuleOutput:
         """
         Args:
@@ -120,9 +118,11 @@ class DiffusionStructureModule(BaseStructureModule):
         return self._forward_inference(single, pair, mask)
 
     def _forward_train(
-        self, single: torch.Tensor, pair: torch.Tensor,
-        mask: Optional[torch.Tensor],
-        gt_coords: Optional[torch.Tensor] = None,
+        self,
+        single: torch.Tensor,
+        pair: torch.Tensor,
+        mask: torch.Tensor | None,
+        gt_coords: torch.Tensor | None = None,
     ) -> StructureModuleOutput:
         """Training: noise GT coords and learn to predict x0."""
         B, L, _ = single.shape
@@ -151,8 +151,10 @@ class DiffusionStructureModule(BaseStructureModule):
 
     @torch.no_grad()
     def _forward_inference(
-        self, single: torch.Tensor, pair: torch.Tensor,
-        mask: Optional[torch.Tensor],
+        self,
+        single: torch.Tensor,
+        pair: torch.Tensor,
+        mask: torch.Tensor | None,
     ) -> StructureModuleOutput:
         """Inference: iterative denoising from pure noise."""
         B, L, _ = single.shape
@@ -165,7 +167,9 @@ class DiffusionStructureModule(BaseStructureModule):
             x_pred = self._denoise(x, single, pair, t, mask)
 
             alpha_t = self.alphas_cumprod[step]
-            alpha_prev = self.alphas_cumprod[step - 1] if step > 0 else torch.tensor(1.0, device=device)
+            alpha_prev = (
+                self.alphas_cumprod[step - 1] if step > 0 else torch.tensor(1.0, device=device)
+            )
 
             # DDPM update
             beta_t = 1.0 - alpha_t / alpha_prev
@@ -184,7 +188,7 @@ class DiffusionStructureModule(BaseStructureModule):
         single: torch.Tensor,
         pair: torch.Tensor,
         t: torch.Tensor,
-        mask: Optional[torch.Tensor],
+        mask: torch.Tensor | None,
     ) -> torch.Tensor:
         """Core denoising network."""
         B, L, _ = single.shape
@@ -218,9 +222,7 @@ class _DenoisingLayer(nn.Module):
     def __init__(self, d_model: int, n_heads: int = 8, dropout: float = 0.1):
         super().__init__()
         self.norm1 = nn.LayerNorm(d_model)
-        self.attn = nn.MultiheadAttention(
-            d_model, n_heads, dropout=dropout, batch_first=True
-        )
+        self.attn = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
         self.norm2 = nn.LayerNorm(d_model)
         self.ff = nn.Sequential(
             nn.Linear(d_model, d_model * 4),
@@ -231,7 +233,9 @@ class _DenoisingLayer(nn.Module):
         )
 
     def forward(
-        self, x: torch.Tensor, mask: Optional[torch.Tensor] = None,
+        self,
+        x: torch.Tensor,
+        mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         h = self.norm1(x)
         key_padding_mask = ~mask.bool() if mask is not None else None

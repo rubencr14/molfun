@@ -19,15 +19,14 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import torch
 from torch.utils.data import DataLoader
 
-
 # ------------------------------------------------------------------
 # Parsing benchmark
 # ------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class ParsingResult:
@@ -115,45 +114,51 @@ class ParsingBenchmark:
         for path_str in file_paths:
             p = Path(path_str)
             if not p.exists():
-                report.results.append(ParsingResult(
-                    parser_name="unknown",
-                    file_path=path_str,
-                    file_size_kb=0.0,
-                    parse_time_ms=0.0,
-                    throughput_files_per_s=0.0,
-                    success=False,
-                    error="File not found",
-                ))
+                report.results.append(
+                    ParsingResult(
+                        parser_name="unknown",
+                        file_path=path_str,
+                        file_size_kb=0.0,
+                        parse_time_ms=0.0,
+                        throughput_files_per_s=0.0,
+                        success=False,
+                        error="File not found",
+                    )
+                )
                 continue
 
             size_kb = p.stat().st_size / 1024
             try:
                 parser = auto_parser(path_str)
             except ValueError as e:
-                report.results.append(ParsingResult(
-                    parser_name="unknown",
-                    file_path=path_str,
-                    file_size_kb=size_kb,
-                    parse_time_ms=0.0,
-                    throughput_files_per_s=0.0,
-                    success=False,
-                    error=str(e),
-                ))
+                report.results.append(
+                    ParsingResult(
+                        parser_name="unknown",
+                        file_path=path_str,
+                        file_size_kb=size_kb,
+                        parse_time_ms=0.0,
+                        throughput_files_per_s=0.0,
+                        success=False,
+                        error=str(e),
+                    )
+                )
                 continue
 
             parser_name = type(parser).__name__
 
             parse_fn = getattr(parser, "parse_file", None) or getattr(parser, "parse", None)
             if parse_fn is None:
-                report.results.append(ParsingResult(
-                    parser_name=parser_name,
-                    file_path=path_str,
-                    file_size_kb=size_kb,
-                    parse_time_ms=0.0,
-                    throughput_files_per_s=0.0,
-                    success=False,
-                    error="Parser has no parse_file or parse method",
-                ))
+                report.results.append(
+                    ParsingResult(
+                        parser_name=parser_name,
+                        file_path=path_str,
+                        file_size_kb=size_kb,
+                        parse_time_ms=0.0,
+                        throughput_files_per_s=0.0,
+                        success=False,
+                        error="Parser has no parse_file or parse method",
+                    )
+                )
                 continue
 
             # Warmup
@@ -184,15 +189,17 @@ class ParsingBenchmark:
                 mean_ms = 0.0
                 throughput = 0.0
 
-            report.results.append(ParsingResult(
-                parser_name=parser_name,
-                file_path=path_str,
-                file_size_kb=size_kb,
-                parse_time_ms=round(mean_ms, 3),
-                throughput_files_per_s=round(throughput, 1),
-                success=success,
-                error=error,
-            ))
+            report.results.append(
+                ParsingResult(
+                    parser_name=parser_name,
+                    file_path=path_str,
+                    file_size_kb=size_kb,
+                    parse_time_ms=round(mean_ms, 3),
+                    throughput_files_per_s=round(throughput, 1),
+                    success=success,
+                    error=error,
+                )
+            )
 
         return report
 
@@ -200,6 +207,7 @@ class ParsingBenchmark:
 # ------------------------------------------------------------------
 # DataLoader benchmark
 # ------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class LoadingResult:
@@ -303,7 +311,9 @@ class LoadingBenchmark:
                 n_samples += len(batch[0]) if hasattr(batch[0], "__len__") else batch_size
             elif isinstance(batch, dict):
                 first_val = next(iter(batch.values()))
-                n_samples += first_val.shape[0] if isinstance(first_val, torch.Tensor) else batch_size
+                n_samples += (
+                    first_val.shape[0] if isinstance(first_val, torch.Tensor) else batch_size
+                )
             else:
                 n_samples += batch_size
             if n_batches >= self._max_batches:

@@ -21,8 +21,6 @@ Usage::
 
 from __future__ import annotations
 
-from typing import Optional
-
 import torch
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
@@ -30,7 +28,7 @@ from torch.utils.checkpoint import checkpoint
 
 def apply_gradient_checkpointing(
     module: nn.Module,
-    block_types: Optional[set[type]] = None,
+    block_types: set[type] | None = None,
     preserve_rng_state: bool = True,
 ) -> int:
     """
@@ -158,11 +156,12 @@ def _wrap_forward(module: nn.Module, preserve_rng_state: bool) -> None:
             return original_forward(*a, **kwargs)
 
         tensor_args = tuple(a for a in args if isinstance(a, torch.Tensor))
-        non_tensor_args = tuple(a for a in args if not isinstance(a, torch.Tensor))
+        tuple(a for a in args if not isinstance(a, torch.Tensor))
 
         if tensor_args:
             return checkpoint(
-                run, *args,
+                run,
+                *args,
                 use_reentrant=False,
                 preserve_rng_state=preserve_rng_state,
             )

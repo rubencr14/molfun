@@ -7,6 +7,7 @@ StreamingStructureDataset, and molfun.data.storage already expect.
 """
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 
@@ -38,7 +39,7 @@ class ObjectStorage(ABC):
 
     @classmethod
     @abstractmethod
-    def from_env(cls) -> "ObjectStorage":
+    def from_env(cls) -> ObjectStorage:
         """Construct from environment variables."""
 
     def __repr__(self) -> str:

@@ -8,8 +8,9 @@ No external dependencies.
 
 from __future__ import annotations
 
-from molfun.data.parsers.base import BaseLigandParser, ParsedMolecule, ParsedAtom, ParsedBond
+import contextlib
 
+from molfun.data.parsers.base import BaseLigandParser, ParsedAtom, ParsedBond, ParsedMolecule
 
 _MOL2_BOND_MAP = {"1": 1, "2": 2, "3": 3, "ar": 4, "am": 1, "du": 0, "nc": 0, "un": 0}
 
@@ -49,13 +50,11 @@ class MOL2Parser(BaseLigandParser):
 
         mol_name = mol_section[0].strip() if mol_section else "unnamed"
 
-        n_atoms = 0
-        n_bonds = 0
         if len(mol_section) > 1:
             parts = mol_section[1].split()
             try:
-                n_atoms = int(parts[0])
-                n_bonds = int(parts[1]) if len(parts) > 1 else 0
+                int(parts[0])
+                int(parts[1]) if len(parts) > 1 else 0
             except (ValueError, IndexError):
                 pass
 
@@ -110,10 +109,8 @@ class MOL2Parser(BaseLigandParser):
 
         charge = 0.0
         if len(parts) > 8:
-            try:
+            with contextlib.suppress(ValueError):
                 charge = float(parts[8])
-            except ValueError:
-                pass
 
         residue = ""
         if len(parts) > 7:
@@ -122,7 +119,9 @@ class MOL2Parser(BaseLigandParser):
         return ParsedAtom(
             index=atom_id,
             element=element,
-            x=x, y=y, z=z,
+            x=x,
+            y=y,
+            z=z,
             charge=charge,
             atom_type=atom_type,
             name=atom_name,

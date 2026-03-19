@@ -21,19 +21,19 @@ Three levels of protein property prediction:
     # Targets = 3D coordinates from PDB (no external labels needed)
 """
 
-from molfun.ml.features import (
-    ProteinFeaturizer,
-    AVAILABLE_FEATURES,
-    DEFAULT_FEATURES,
-)
 from molfun.ml.estimators import (
-    ProteinClassifier,
-    ProteinRegressor,
     CLASSIFIER_NAMES,
     REGRESSOR_NAMES,
+    ProteinClassifier,
+    ProteinRegressor,
+)
+from molfun.ml.features import (
+    AVAILABLE_FEATURES,
+    DEFAULT_FEATURES,
+    ProteinFeaturizer,
 )
 from molfun.ml.heads import PropertyHead
-from molfun.ml.io import save_model, load_model
+from molfun.ml.io import load_model, save_model
 
 __all__ = [
     "ProteinFeaturizer",

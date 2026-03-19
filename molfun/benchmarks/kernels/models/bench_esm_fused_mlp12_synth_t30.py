@@ -24,13 +24,15 @@ Notes:
 
 import types
 from dataclasses import dataclass
-from typing import List, Dict, Tuple, Any
+from typing import Any
 
 import torch
 from transformers import AutoTokenizer, EsmModel
 
+from molfun.kernels.models.fused_linear_bias_residual_triton import (
+    fused_linear_bias_residual_triton,
+)
 from molfun.kernels.models.fused_linear_gelu_triton import fused_linear_gelu_triton
-from molfun.kernels.models.fused_linear_bias_residual_triton import fused_linear_bias_residual_triton
 
 
 @dataclass
@@ -61,7 +63,7 @@ def time_it_cuda(fn, iters: int, warmup: int) -> float:
     return ms_total / iters  # ms/iter
 
 
-def make_protein_like_sequences(batch_size: int, seq_len: int) -> List[str]:
+def make_protein_like_sequences(batch_size: int, seq_len: int) -> list[str]:
     alphabet = "ACDEFGHIKLMNPQRSTVWY"  # 20 canonical amino acids
     seq = (alphabet * ((seq_len // len(alphabet)) + 1))[:seq_len]
     return [seq for _ in range(batch_size)]
@@ -123,11 +125,11 @@ def unpatch_mlp12(model: EsmModel, originals):
 
 
 @torch.inference_mode()
-def forward_last_hidden(model: EsmModel, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+def forward_last_hidden(model: EsmModel, batch: dict[str, torch.Tensor]) -> torch.Tensor:
     return model(**batch).last_hidden_state
 
 
-def run_benchmark() -> List[Dict[str, Any]]:
+def run_benchmark() -> list[dict[str, Any]]:
     cfg = BenchCfg()
     assert torch.cuda.is_available(), "CUDA required"
     torch.set_grad_enabled(False)
@@ -135,7 +137,7 @@ def run_benchmark() -> List[Dict[str, Any]]:
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_id, do_lower_case=False)
     model = EsmModel.from_pretrained(cfg.model_id).to(cfg.device).eval().to(cfg.dtype)
 
-    cases: List[Tuple[int, int]] = [
+    cases: list[tuple[int, int]] = [
         (1, 256),
         (1, 512),
         (1, 1024),
@@ -186,25 +188,27 @@ def run_benchmark() -> List[Dict[str, Any]]:
         tok_per_s_base = tokens / (t_base / 1e3)
         tok_per_s_pat = tokens / (t_pat / 1e3)
 
-        results.append({
-            "benchmark_name": "esm_fused_mlp12_synth_t30",
-            "case_name": f"B={B}_L={L}",
-            "baseline_time_ms": round(t_base, 3),
-            "triton_time_ms": round(t_pat, 3),
-            "speedup": round(speedup, 2) if speedup != float("inf") else None,
-            "max_diff": max_abs,
-            "mean_diff": mean_abs,
-            "metadata": {
-                "B": B,
-                "L": L,
-                "tokens": tokens,
-                "tokens_per_sec_baseline": round(tok_per_s_base, 0),
-                "tokens_per_sec_triton": round(tok_per_s_pat, 0),
-                "model_id": cfg.model_id,
-                "dtype": str(cfg.dtype),
-                "device": cfg.device,
+        results.append(
+            {
+                "benchmark_name": "esm_fused_mlp12_synth_t30",
+                "case_name": f"B={B}_L={L}",
+                "baseline_time_ms": round(t_base, 3),
+                "triton_time_ms": round(t_pat, 3),
+                "speedup": round(speedup, 2) if speedup != float("inf") else None,
+                "max_diff": max_abs,
+                "mean_diff": mean_abs,
+                "metadata": {
+                    "B": B,
+                    "L": L,
+                    "tokens": tokens,
+                    "tokens_per_sec_baseline": round(tok_per_s_base, 0),
+                    "tokens_per_sec_triton": round(tok_per_s_pat, 0),
+                    "model_id": cfg.model_id,
+                    "dtype": str(cfg.dtype),
+                    "device": cfg.device,
+                },
             }
-        })
+        )
 
     return results
 
@@ -220,9 +224,13 @@ def main():
     for result in results:
         meta = result["metadata"]
         print(f"B={meta['B']} L={meta['L']} | tokens={meta['tokens']}")
-        print(f"  baseline: {result['baseline_time_ms']:.3f} ms/iter  ({meta['tokens_per_sec_baseline']:,.0f} tokens/s)")
-        print(f"  patched : {result['triton_time_ms']:.3f} ms/iter  ({meta['tokens_per_sec_triton']:,.0f} tokens/s)")
-        print(f"  speedup : {result['speedup']:.2f}x" if result['speedup'] else "  speedup : inf")
+        print(
+            f"  baseline: {result['baseline_time_ms']:.3f} ms/iter  ({meta['tokens_per_sec_baseline']:,.0f} tokens/s)"
+        )
+        print(
+            f"  patched : {result['triton_time_ms']:.3f} ms/iter  ({meta['tokens_per_sec_triton']:,.0f} tokens/s)"
+        )
+        print(f"  speedup : {result['speedup']:.2f}x" if result["speedup"] else "  speedup : inf")
         print(f"  max|diff|: {result['max_diff']:.3e}  mean|diff|: {result['mean_diff']:.3e}\n")
 
 

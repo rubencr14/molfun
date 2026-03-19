@@ -2,6 +2,6 @@
 MD trajectory analysis module.
 """
 
-from molfun.analysis.md import MolfunAnalysis, TrajAnalysis, AnalysisMD
+from molfun.analysis.md import AnalysisMD, MolfunAnalysis, TrajAnalysis
 
 __all__ = ["MolfunAnalysis", "TrajAnalysis", "AnalysisMD"]

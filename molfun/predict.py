@@ -14,7 +14,6 @@ Usage::
 """
 
 from __future__ import annotations
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Singleton model cache — avoids reloading on every call
@@ -26,13 +25,14 @@ _MODEL_CACHE: dict[str, object] = {}
 def _get_model(
     backend: str,
     device: str,
-    head: Optional[str] = None,
-    head_config: Optional[dict] = None,
+    head: str | None = None,
+    head_config: dict | None = None,
 ):
     """Return a cached MolfunStructureModel, loading on first call."""
     key = f"{backend}:{device}:{head}"
     if key not in _MODEL_CACHE:
         from molfun.models.structure import MolfunStructureModel
+
         _MODEL_CACHE[key] = MolfunStructureModel.from_pretrained(
             backend,
             device=device,
@@ -50,6 +50,7 @@ def clear_cache() -> None:
 # ---------------------------------------------------------------------------
 # 1. predict_structure
 # ---------------------------------------------------------------------------
+
 
 def predict_structure(
     sequence: str,
@@ -126,7 +127,7 @@ AVAILABLE_PROPERTIES = sorted(_SEQUENCE_PROPERTIES | _EMBEDDING_PROPERTIES)
 
 def predict_properties(
     sequence: str,
-    properties: Optional[list[str]] = None,
+    properties: list[str] | None = None,
     backend: str = "openfold",
     device: str = "cpu",
 ) -> dict:
@@ -170,10 +171,7 @@ def predict_properties(
     unknown = [p for p in properties if p not in _SEQUENCE_PROPERTIES | _EMBEDDING_PROPERTIES]
 
     if unknown:
-        raise ValueError(
-            f"Unknown properties: {unknown}. "
-            f"Available: {AVAILABLE_PROPERTIES}"
-        )
+        raise ValueError(f"Unknown properties: {unknown}. Available: {AVAILABLE_PROPERTIES}")
 
     if seq_props:
         result.update(_compute_sequence_properties(sequence, seq_props))
@@ -187,6 +185,7 @@ def predict_properties(
 # ---------------------------------------------------------------------------
 # 3. predict_affinity
 # ---------------------------------------------------------------------------
+
 
 def predict_affinity(
     sequence: str,
@@ -229,7 +228,8 @@ def predict_affinity(
         print(f"ΔG = {result['binding_affinity_kcal']:.1f} kcal/mol")
     """
     model = _get_model(
-        backend, device,
+        backend,
+        device,
         head="affinity",
         head_config={"single_dim": single_dim},
     )
@@ -242,6 +242,7 @@ def predict_affinity(
     affinity_score = 0.0
     if "preds" in result_dict:
         import torch
+
         preds = result_dict["preds"]
         if isinstance(preds, torch.Tensor):
             affinity_score = preds.detach().cpu().squeeze().item()
@@ -249,6 +250,7 @@ def predict_affinity(
     confidence = 0.0
     if output.confidence is not None:
         import torch
+
         confidence = float(output.confidence.mean().detach().cpu().item())
 
     return {
@@ -263,9 +265,9 @@ def predict_affinity(
 # Helpers — coordinate extraction
 # ---------------------------------------------------------------------------
 
+
 def _extract_coords(coords_tensor) -> list[list[float]]:
     """Extract CA coordinates from structure_coords tensor."""
-    import torch
 
     t = coords_tensor.detach().cpu()
 
@@ -294,16 +296,34 @@ def _extract_plddt(plddt_tensor) -> list[float]:
 # ---------------------------------------------------------------------------
 
 from molfun.constants import (
-    ONE_TO_THREE as _ONE_TO_THREE,
-    MW as _AA_WEIGHTS,
-    WATER_LOSS as _WATER_LOSS,
-    HYDROPHOBICITY as _AA_HYDROPHOBICITY,
-    CHARGE_SPARSE as _AA_CHARGE,
     AROMATIC as _AA_AROMATIC,
-    PK_SIDE as _AA_PK,
-    PK_NH2 as _PK_NH2,
-    PK_COOH as _PK_COOH,
+)
+from molfun.constants import (
+    CHARGE_SPARSE as _AA_CHARGE,
+)
+from molfun.constants import (
     DIWV_WEIGHTS as _DIWV_WEIGHTS,
+)
+from molfun.constants import (
+    HYDROPHOBICITY as _AA_HYDROPHOBICITY,
+)
+from molfun.constants import (
+    MW as _AA_WEIGHTS,
+)
+from molfun.constants import (
+    ONE_TO_THREE as _ONE_TO_THREE,
+)
+from molfun.constants import (
+    PK_COOH as _PK_COOH,
+)
+from molfun.constants import (
+    PK_NH2 as _PK_NH2,
+)
+from molfun.constants import (
+    PK_SIDE as _AA_PK,
+)
+from molfun.constants import (
+    WATER_LOSS as _WATER_LOSS,
 )
 
 
@@ -328,6 +348,7 @@ def _coords_to_pdb(sequence: str, coords: list[list[float]]) -> str:
 # Helpers — sequence-based property computation
 # ---------------------------------------------------------------------------
 
+
 def _compute_sequence_properties(sequence: str, props: list[str]) -> dict[str, float]:
     """Compute analytically derived sequence properties."""
     seq = sequence.upper()
@@ -335,14 +356,12 @@ def _compute_sequence_properties(sequence: str, props: list[str]) -> dict[str, f
     result: dict[str, float] = {}
 
     if "molecular_weight" in props:
-        result["molecular_weight"] = sum(
-            _AA_WEIGHTS.get(aa, 110.0) for aa in seq
-        ) - (L - 1) * _WATER_LOSS
+        result["molecular_weight"] = (
+            sum(_AA_WEIGHTS.get(aa, 110.0) for aa in seq) - (L - 1) * _WATER_LOSS
+        )
 
     if "hydrophobicity" in props:
-        result["hydrophobicity"] = sum(
-            _AA_HYDROPHOBICITY.get(aa, 0.0) for aa in seq
-        ) / max(L, 1)
+        result["hydrophobicity"] = sum(_AA_HYDROPHOBICITY.get(aa, 0.0) for aa in seq) / max(L, 1)
 
     if "charge" in props:
         result["charge"] = sum(_AA_CHARGE.get(aa, 0.0) for aa in seq)
@@ -361,6 +380,7 @@ def _compute_sequence_properties(sequence: str, props: list[str]) -> dict[str, f
 
 def _compute_pi(seq: str) -> float:
     """Bisection method for isoelectric point."""
+
     def _charge_at_ph(ph: float) -> float:
         charge = 1.0 / (1.0 + 10 ** (ph - _PK_NH2))
         charge -= 1.0 / (1.0 + 10 ** (_PK_COOH - ph))
@@ -397,6 +417,7 @@ def _compute_instability(seq: str) -> float:
 # Helpers — embedding-based property estimation
 # ---------------------------------------------------------------------------
 
+
 def _compute_embedding_properties(
     sequence: str,
     props: list[str],
@@ -414,8 +435,6 @@ def _compute_embedding_properties(
     model = _get_model(backend, device)
     output = model.predict(sequence)
 
-    import torch
-
     single = output.single_repr
     if single.dim() == 3:
         emb = single[0].mean(dim=0)
@@ -425,7 +444,7 @@ def _compute_embedding_properties(
         emb = single
 
     emb_np = emb.detach().cpu().float()
-    norm = float(emb_np.norm().item())
+    float(emb_np.norm().item())
     mean_val = float(emb_np.mean().item())
 
     seq_upper = sequence.upper()
@@ -461,6 +480,7 @@ def _compute_embedding_properties(
 def _sigmoid(x: float) -> float:
     """Numerically stable sigmoid."""
     import math
+
     if x >= 0:
         return 1.0 / (1.0 + math.exp(-x))
     ex = math.exp(x)

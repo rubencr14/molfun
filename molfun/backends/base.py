@@ -6,23 +6,24 @@ the rest of molfun can discover its components by name.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from molfun.adapters.base import BaseAdapter
-    from molfun.losses.base import LossFunction
+    pass
 
 
 @dataclass
 class BackendSpec:
     """All components that a model backend provides."""
+
     name: str
     adapter_cls: type
-    loss_cls: Optional[type] = None
-    featurizer_cls: Optional[type] = None
-    helpers_module: Optional[object] = None
-    convenience_cls: Optional[type] = None
+    loss_cls: type | None = None
+    featurizer_cls: type | None = None
+    helpers_module: object | None = None
+    convenience_cls: type | None = None
 
 
 class BackendRegistry:
@@ -44,9 +45,7 @@ class BackendRegistry:
 
     def __getitem__(self, name: str) -> BackendSpec:
         if name not in self._registry:
-            raise KeyError(
-                f"Backend '{name}' not found. Available: {sorted(self._registry)}"
-            )
+            raise KeyError(f"Backend '{name}' not found. Available: {sorted(self._registry)}")
         return self._registry[name]
 
     def __contains__(self, name: str) -> bool:

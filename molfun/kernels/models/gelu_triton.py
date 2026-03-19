@@ -63,39 +63,34 @@ import triton.language as tl
 
 @triton.jit
 def gelu_kernel_erf(x_ptr, y_ptr, n_elements: tl.constexpr, BLOCK: tl.constexpr):
-    pid = tl.program_id(axis=0)                     # program index (like CUDA block id)
-    block_start = pid * BLOCK                       # first element index for this program
-    offsets = block_start + tl.arange(0, BLOCK)     # vector of indices handled by this program
-    mask = offsets < n_elements                     # guard for tail
+    pid = tl.program_id(axis=0)  # program index (like CUDA block id)
+    block_start = pid * BLOCK  # first element index for this program
+    offsets = block_start + tl.arange(0, BLOCK)  # vector of indices handled by this program
+    mask = offsets < n_elements  # guard for tail
 
     x = tl.load(x_ptr + offsets, mask=mask, other=0.0)  # load input tile
-    x_f32 = x.to(tl.float32)                            # upcast for stable math
+    x_f32 = x.to(tl.float32)  # upcast for stable math
 
-    inv_sqrt2 = 0.7071067811865476                      # 1/sqrt(2)
-    u = x_f32 * inv_sqrt2                                # x / sqrt(2)
+    inv_sqrt2 = 0.7071067811865476  # 1/sqrt(2)
+    u = x_f32 * inv_sqrt2  # x / sqrt(2)
 
     # Triton math namespace is version-dependent; tl.math.erf is commonly available.
     # If your Triton exposes tl.erf directly, you can swap to tl.erf(u).
     erf_u = tl.math.erf(u)
 
-    y_f32 = 0.5 * x_f32 * (1.0 + erf_u)                 # exact GELU
+    y_f32 = 0.5 * x_f32 * (1.0 + erf_u)  # exact GELU
 
-    y = y_f32.to(x.dtype)                               # cast back to fp16/bf16
-    tl.store(y_ptr + offsets, y, mask=mask)             # store output tile
+    y = y_f32.to(x.dtype)  # cast back to fp16/bf16
+    tl.store(y_ptr + offsets, y, mask=mask)  # store output tile
 
 
 def gelu_triton(x: torch.Tensor, block: int = 1024) -> torch.Tensor:
     assert x.is_cuda, "x must be a CUDA tensor"
-    x_flat = x.contiguous().view(-1)                    # flatten for 1D kernel
-    n = x_flat.numel()                                  # total elements
-    y = torch.empty_like(x_flat)                        # allocate output
+    x_flat = x.contiguous().view(-1)  # flatten for 1D kernel
+    n = x_flat.numel()  # total elements
+    y = torch.empty_like(x_flat)  # allocate output
 
-    grid = (triton.cdiv(n, block),)                     # number of programs
-    gelu_kernel_erf[grid](
-        x_flat, y,
-        n_elements=n,
-        BLOCK=block,
-        num_warps=4
-    )
+    grid = (triton.cdiv(n, block),)  # number of programs
+    gelu_kernel_erf[grid](x_flat, y, n_elements=n, BLOCK=block, num_warps=4)
 
-    return y.view_as(x)                                 # reshape back
+    return y.view_as(x)  # reshape back

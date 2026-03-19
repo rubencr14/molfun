@@ -9,13 +9,11 @@ Reference: Katharopoulos et al., "Transformers are RNNs" (2020).
 """
 
 from __future__ import annotations
-from typing import Optional
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
-from molfun.modules.attention.base import BaseAttention, ATTENTION_REGISTRY
+from molfun.modules.attention.base import ATTENTION_REGISTRY, BaseAttention
 
 
 def _elu_feature_map(x: torch.Tensor) -> torch.Tensor:
@@ -52,8 +50,8 @@ class LinearAttention(BaseAttention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        bias: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
+        bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
         # Apply feature map: [B, H, L, D]
         q_prime = self._feature_map(q)
@@ -71,9 +69,7 @@ class LinearAttention(BaseAttention):
         numerator = torch.einsum("bhqd,bhdv->bhqv", q_prime, kv)
 
         # Normalizer: Q @ sum(K) : [B, H, Lq, 1]
-        denominator = torch.einsum(
-            "bhqd,bhd->bhq", q_prime, k_prime.sum(dim=-2)
-        ).unsqueeze(-1)
+        denominator = torch.einsum("bhqd,bhd->bhq", q_prime, k_prime.sum(dim=-2)).unsqueeze(-1)
 
         return numerator / (denominator + self._eps)
 

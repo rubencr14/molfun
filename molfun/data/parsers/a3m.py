@@ -47,8 +47,8 @@ class A3MParser(BaseAlignmentParser):
         if not sequences:
             raise ValueError("Empty A3M: no sequences found.")
 
-        sequences = sequences[:self.max_depth]
-        headers = headers[:self.max_depth]
+        sequences = sequences[: self.max_depth]
+        headers = headers[: self.max_depth]
         query_len = sum(1 for c in sequences[0] if c == c.upper() and c != "-")
 
         msa_rows = []

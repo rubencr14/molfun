@@ -6,15 +6,15 @@ and returns a string result the LLM can reason about.
 """
 
 from __future__ import annotations
-from typing import Optional
-import time
+
 import json
+import time
 import traceback
 
 import torch
 from torch.utils.data import DataLoader
 
-from molfun.agents.experiment import ExperimentConfig, Experiment
+from molfun.agents.experiment import Experiment, ExperimentConfig
 
 STRATEGY_REGISTRY = {}
 
@@ -23,14 +23,20 @@ def _ensure_strategy_registry():
     if STRATEGY_REGISTRY:
         return
     from molfun.training import (
-        HeadOnlyFinetune, LoRAFinetune, PartialFinetune, FullFinetune,
+        FullFinetune,
+        HeadOnlyFinetune,
+        LoRAFinetune,
+        PartialFinetune,
     )
-    STRATEGY_REGISTRY.update({
-        "head_only": HeadOnlyFinetune,
-        "lora": LoRAFinetune,
-        "partial": PartialFinetune,
-        "full": FullFinetune,
-    })
+
+    STRATEGY_REGISTRY.update(
+        {
+            "head_only": HeadOnlyFinetune,
+            "lora": LoRAFinetune,
+            "partial": PartialFinetune,
+            "full": FullFinetune,
+        }
+    )
 
 
 TOOL_SCHEMAS = [
@@ -205,7 +211,7 @@ class MolfunTools:
         self,
         train_loader: DataLoader,
         val_loader: DataLoader,
-        test_loader: Optional[DataLoader] = None,
+        test_loader: DataLoader | None = None,
         device: str = "cuda",
     ):
         self.train_loader = train_loader
@@ -214,7 +220,7 @@ class MolfunTools:
         self.device = device
         self._models: dict[str, object] = {}  # experiment_id -> MolfunStructureModel
         self._done = False
-        self._done_summary: Optional[str] = None
+        self._done_summary: str | None = None
 
     @property
     def schemas(self) -> list[dict]:
@@ -225,7 +231,7 @@ class MolfunTools:
         return self._done
 
     @property
-    def done_summary(self) -> Optional[str]:
+    def done_summary(self) -> str | None:
         return self._done_summary
 
     # ------------------------------------------------------------------
@@ -256,19 +262,25 @@ class MolfunTools:
 
     def _list_components(self) -> str:
         from molfun.modules import (
-            ATTENTION_REGISTRY, BLOCK_REGISTRY,
-            STRUCTURE_MODULE_REGISTRY, EMBEDDER_REGISTRY,
+            ATTENTION_REGISTRY,
+            BLOCK_REGISTRY,
+            EMBEDDER_REGISTRY,
+            STRUCTURE_MODULE_REGISTRY,
         )
+
         _ensure_strategy_registry()
 
-        return json.dumps({
-            "attention": ATTENTION_REGISTRY.list(),
-            "blocks": BLOCK_REGISTRY.list(),
-            "structure_modules": STRUCTURE_MODULE_REGISTRY.list(),
-            "embedders": EMBEDDER_REGISTRY.list(),
-            "strategies": list(STRATEGY_REGISTRY),
-            "heads": ["affinity", "structure"],
-        }, indent=2)
+        return json.dumps(
+            {
+                "attention": ATTENTION_REGISTRY.list(),
+                "blocks": BLOCK_REGISTRY.list(),
+                "structure_modules": STRUCTURE_MODULE_REGISTRY.list(),
+                "embedders": EMBEDDER_REGISTRY.list(),
+                "strategies": list(STRATEGY_REGISTRY),
+                "heads": ["affinity", "structure"],
+            },
+            indent=2,
+        )
 
     def _build_and_train(
         self,
@@ -276,28 +288,34 @@ class MolfunTools:
         block: str,
         block_config: dict,
         embedder: str = "input",
-        embedder_config: Optional[dict] = None,
+        embedder_config: dict | None = None,
         n_blocks: int = 8,
         structure_module: str = "ipa",
-        structure_module_config: Optional[dict] = None,
+        structure_module_config: dict | None = None,
         strategy: str = "lora",
-        strategy_config: Optional[dict] = None,
+        strategy_config: dict | None = None,
         head: str = "affinity",
-        head_config: Optional[dict] = None,
+        head_config: dict | None = None,
         epochs: int = 10,
     ) -> str:
-        from molfun.modules.builder import ModelBuilder
         from molfun.models.structure import MolfunStructureModel
+        from molfun.modules.builder import ModelBuilder
 
         _ensure_strategy_registry()
 
         config = ExperimentConfig(
-            name=name, embedder=embedder, embedder_config=embedder_config or {},
-            block=block, block_config=block_config, n_blocks=n_blocks,
+            name=name,
+            embedder=embedder,
+            embedder_config=embedder_config or {},
+            block=block,
+            block_config=block_config,
+            n_blocks=n_blocks,
             structure_module=structure_module,
             structure_module_config=structure_module_config or {},
-            strategy=strategy, strategy_config=strategy_config or {},
-            head=head, head_config=head_config or {},
+            strategy=strategy,
+            strategy_config=strategy_config or {},
+            head=head,
+            head_config=head_config or {},
             epochs=epochs,
         )
         experiment = Experiment(config=config, status="running")
@@ -315,21 +333,24 @@ class MolfunTools:
             ).build()
 
             model = MolfunStructureModel.from_custom(
-                built, device=self.device,
-                head=config.head, head_config=config.head_config or None,
+                built,
+                device=self.device,
+                head=config.head,
+                head_config=config.head_config or None,
             )
 
             strat_cls = STRATEGY_REGISTRY.get(config.strategy)
             if strat_cls is None:
                 raise ValueError(
-                    f"Unknown strategy '{config.strategy}'. "
-                    f"Available: {list(STRATEGY_REGISTRY)}"
+                    f"Unknown strategy '{config.strategy}'. Available: {list(STRATEGY_REGISTRY)}"
                 )
             strat = strat_cls(**config.strategy_config)
 
             history = model.fit(
-                self.train_loader, self.val_loader,
-                strategy=strat, epochs=config.epochs,
+                self.train_loader,
+                self.val_loader,
+                strategy=strat,
+                epochs=config.epochs,
             )
 
             experiment.history = history
@@ -372,7 +393,7 @@ class MolfunTools:
 
     def _evaluate_model(self, model) -> dict:
         """Run evaluation on test set and return metrics."""
-        from molfun.helpers.training import unpack_batch, to_device
+        from molfun.helpers.training import to_device, unpack_batch
 
         model.adapter.eval()
         if model.head is not None:
@@ -405,14 +426,14 @@ class MolfunTools:
         if preds.numel() > 2:
             vp = preds - preds.mean()
             vt = targets - targets.mean()
-            denom = (vp.norm() * vt.norm())
+            denom = vp.norm() * vt.norm()
             if denom > 1e-8:
                 metrics["test_pearson"] = (vp * vt).sum().item() / denom.item()
 
         return {k: round(v, 6) for k, v in metrics.items()}
 
     def _get_experiment(self, experiment_id: str) -> str:
-        exp = getattr(self, '_last_experiment', None)
+        exp = getattr(self, "_last_experiment", None)
         if exp and exp.id == experiment_id:
             return exp.to_json()
         return json.dumps({"error": f"Experiment {experiment_id} not found in tool cache"})
@@ -421,22 +442,24 @@ class MolfunTools:
         # This returns a placeholder; the agent loop injects actual memory
         return "Use memory context above for experiment history."
 
-    def _save_best_model(self, path: str, experiment_id: Optional[str] = None) -> str:
+    def _save_best_model(self, path: str, experiment_id: str | None = None) -> str:
         target_id = experiment_id
         if target_id and target_id in self._models:
             model = self._models[target_id]
             model.save(path)
             return json.dumps({"saved": path, "experiment_id": target_id})
-        return json.dumps({"error": "Model not found. Only the most recently trained models are kept in memory."})
+        return json.dumps(
+            {"error": "Model not found. Only the most recently trained models are kept in memory."}
+        )
 
     def _done_handler(self, summary: str) -> str:
         self._done = True
         self._done_summary = summary
         return "Agent signaled completion."
 
-    def get_last_experiment(self) -> Optional[Experiment]:
+    def get_last_experiment(self) -> Experiment | None:
         """Used by the agent loop to persist experiments to memory."""
-        return getattr(self, '_last_experiment', None)
+        return getattr(self, "_last_experiment", None)
 
     def clear_last_experiment(self) -> None:
         self._last_experiment = None

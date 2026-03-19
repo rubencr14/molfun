@@ -39,21 +39,27 @@ def _lazy_import(name):
     """Import backends lazily to avoid requiring all dependencies."""
     if name == "OpenAIBackend":
         from molfun.agents.llm.openai_backend import OpenAIBackend
+
         return OpenAIBackend
     elif name == "lm_studio":
         from molfun.agents.llm.openai_backend import lm_studio
+
         return lm_studio
     elif name == "vllm_local":
         from molfun.agents.llm.openai_backend import vllm_local
+
         return vllm_local
     elif name == "AnthropicBackend":
         from molfun.agents.llm.anthropic_backend import AnthropicBackend
+
         return AnthropicBackend
     elif name == "OllamaBackend":
         from molfun.agents.llm.ollama_backend import OllamaBackend
+
         return OllamaBackend
     elif name == "LiteLLMBackend":
         from molfun.agents.llm.litellm_backend import LiteLLMBackend
+
         return LiteLLMBackend
     raise AttributeError(f"module 'molfun.agents.llm' has no attribute {name!r}")
 

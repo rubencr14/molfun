@@ -6,9 +6,9 @@ multi-model structures, non-standard residues, and metadata.
 """
 
 from __future__ import annotations
-from typing import Optional
-import tempfile
+
 import os
+import tempfile
 
 import torch
 
@@ -33,13 +33,13 @@ class CIFParser(BaseStructureParser):
     def __init__(self, max_seq_len: int = 512):
         super().__init__(max_seq_len=max_seq_len)
         try:
-            from Bio.PDB import MMCIFParser as _BioMMCIF, PDBParser as _BioPDB
+            from Bio.PDB import MMCIFParser as _BioMMCIF
+            from Bio.PDB import PDBParser as _BioPDB
+
             self._mmcif_cls = _BioMMCIF
             self._pdb_cls = _BioPDB
         except ImportError:
-            raise ImportError(
-                "BioPython is required for CIFParser: pip install biopython"
-            )
+            raise ImportError("BioPython is required for CIFParser: pip install biopython")
 
     def parse_text(self, text: str) -> ParsedStructure:
         """Parse mmCIF text (writes to temp file for BioPython)."""
@@ -48,7 +48,9 @@ class CIFParser(BaseStructureParser):
         parser_cls = self._mmcif_cls if is_cif else self._pdb_cls
 
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=suffix, delete=False,
+            mode="w",
+            suffix=suffix,
+            delete=False,
         ) as tmp:
             tmp.write(text)
             tmp_path = tmp.name
@@ -63,7 +65,7 @@ class CIFParser(BaseStructureParser):
     def parse_file(
         self,
         path: str,
-        storage_options: Optional[dict] = None,
+        storage_options: dict | None = None,
     ) -> ParsedStructure:
         from molfun.data.storage import is_remote
 

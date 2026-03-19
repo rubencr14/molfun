@@ -37,21 +37,17 @@ Usage
 """
 
 from __future__ import annotations
-from typing import Optional
-from dataclasses import dataclass, field
 
-import torch
 import torch.nn as nn
 
-from molfun.modules.blocks.base import BLOCK_REGISTRY, BaseBlock, BlockOutput
+from molfun.adapters.base import BaseAdapter
+from molfun.core.types import TrunkOutput
+from molfun.modules.blocks.base import BLOCK_REGISTRY
 from molfun.modules.embedders.base import EMBEDDER_REGISTRY, BaseEmbedder
 from molfun.modules.structure_module.base import (
     STRUCTURE_MODULE_REGISTRY,
     BaseStructureModule,
-    StructureModuleOutput,
 )
-from molfun.adapters.base import BaseAdapter
-from molfun.core.types import TrunkOutput
 
 
 class ModelBuilder:
@@ -65,12 +61,12 @@ class ModelBuilder:
     def __init__(
         self,
         embedder: str = "input",
-        embedder_config: Optional[dict] = None,
+        embedder_config: dict | None = None,
         block: str = "pairformer",
-        block_config: Optional[dict] = None,
+        block_config: dict | None = None,
         n_blocks: int = 8,
         structure_module: str = "ipa",
-        structure_module_config: Optional[dict] = None,
+        structure_module_config: dict | None = None,
     ):
         self.embedder_name = embedder
         self.embedder_config = embedder_config or {}
@@ -80,14 +76,16 @@ class ModelBuilder:
         self.sm_name = structure_module
         self.sm_config = structure_module_config or {}
 
-    def build(self) -> "BuiltModel":
+    def build(self) -> BuiltModel:
         """Assemble and return the model."""
         embedder = EMBEDDER_REGISTRY.build(self.embedder_name, **self.embedder_config)
 
-        blocks = nn.ModuleList([
-            BLOCK_REGISTRY.build(self.block_name, **self.block_config)
-            for _ in range(self.n_blocks)
-        ])
+        blocks = nn.ModuleList(
+            [
+                BLOCK_REGISTRY.build(self.block_name, **self.block_config)
+                for _ in range(self.n_blocks)
+            ]
+        )
 
         sm = STRUCTURE_MODULE_REGISTRY.build(self.sm_name, **self.sm_config)
 
@@ -119,7 +117,7 @@ class BuiltModel(BaseAdapter):
         embedder: BaseEmbedder,
         blocks: nn.ModuleList,
         structure_module: BaseStructureModule,
-        config: Optional[dict] = None,
+        config: dict | None = None,
     ):
         super().__init__()
         self.embedder = embedder
@@ -151,16 +149,20 @@ class BuiltModel(BaseAdapter):
 
         # Blocks may expect 3D [B, L, D] (Pairformer, SimpleTransformer) or
         # 4D [B, N, L, D] (Evoformer). Adapt the embedder output to match.
-        block_expects_3d = (
+        (
             len(self.blocks) > 0
-            and hasattr(self.blocks[0], 'd_pair')
+            and hasattr(self.blocks[0], "d_pair")
             and not isinstance(self.blocks[0], type(None))
             and single.dim() == 4
         )
 
         for block in self.blocks:
             # Squeeze MSA dim for blocks that expect [B, L, D]
-            inp = single[:, 0] if (single.dim() == 4 and block.d_pair >= 0 and single.shape[1] == 1) else single
+            inp = (
+                single[:, 0]
+                if (single.dim() == 4 and block.d_pair >= 0 and single.shape[1] == 1)
+                else single
+            )
             out = block(inp, pair=pair)
             single = out.single
             if out.pair is not None:
@@ -182,7 +184,9 @@ class BuiltModel(BaseAdapter):
             if gt is not None:
                 sm_kwargs["gt_coords"] = gt
             sm_out = self.structure_module(
-                single_repr, pair, **sm_kwargs,
+                single_repr,
+                pair,
+                **sm_kwargs,
             )
             structure_coords = sm_out.positions
             confidence = sm_out.confidence

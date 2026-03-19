@@ -15,15 +15,18 @@ scalar = loss_fn(raw_openfold_outputs, batch=feature_dict)
 """
 
 from __future__ import annotations
-from typing import Optional, TYPE_CHECKING
+
+import contextlib
+from typing import TYPE_CHECKING
+
 import torch
 
-from molfun.losses.base import LOSS_REGISTRY, LossFunction
 from molfun.backends.openfold.helpers import (
-    strip_recycling_dim,
     fill_missing_batch_fields,
     make_zero_violation,
+    strip_recycling_dim,
 )
+from molfun.losses.base import LOSS_REGISTRY, LossFunction
 
 if TYPE_CHECKING:
     import ml_collections
@@ -53,7 +56,7 @@ class OpenFoldLoss(LossFunction):
 
     def __init__(
         self,
-        loss_config: "ml_collections.ConfigDict",
+        loss_config: ml_collections.ConfigDict,
         disable_masked_msa: bool = True,
         disable_experimentally_resolved: bool = True,
     ):
@@ -62,10 +65,10 @@ class OpenFoldLoss(LossFunction):
             from openfold.utils.loss import AlphaFoldLoss
         except ImportError:
             raise ImportError(
-                "OpenFold is required: "
-                "pip install git+https://github.com/aqlaboratory/openfold"
+                "OpenFold is required: pip install git+https://github.com/aqlaboratory/openfold"
             )
         import copy
+
         loss_config = copy.deepcopy(loss_config)
         if disable_masked_msa:
             loss_config.masked_msa.weight = 0.0
@@ -80,9 +83,10 @@ class OpenFoldLoss(LossFunction):
     # ------------------------------------------------------------------
 
     @classmethod
-    def fape_only(cls, config) -> "OpenFoldLoss":
+    def fape_only(cls, config) -> OpenFoldLoss:
         """FAPE + supervised chi only — no MSA, distogram or pLDDT terms."""
         import copy
+
         cfg = copy.deepcopy(config.loss)
         cfg.masked_msa.weight = 0.0
         cfg.distogram.weight = 0.0
@@ -93,7 +97,7 @@ class OpenFoldLoss(LossFunction):
         return cls(cfg)
 
     @classmethod
-    def with_weights(cls, config, **weights) -> "OpenFoldLoss":
+    def with_weights(cls, config, **weights) -> OpenFoldLoss:
         """
         Override individual loss-term weights.
 
@@ -102,6 +106,7 @@ class OpenFoldLoss(LossFunction):
             OpenFoldLoss.with_weights(config, fape=1.0, masked_msa=0.0)
         """
         import copy
+
         cfg = copy.deepcopy(config.loss)
         for term, w in weights.items():
             if hasattr(cfg, term):
@@ -115,8 +120,8 @@ class OpenFoldLoss(LossFunction):
     def forward(
         self,
         preds,
-        targets: Optional[torch.Tensor] = None,
-        batch: Optional[dict] = None,
+        targets: torch.Tensor | None = None,
+        batch: dict | None = None,
     ) -> dict[str, torch.Tensor]:
         """
         Compute OpenFold structure loss.
@@ -158,11 +163,13 @@ class OpenFoldLoss(LossFunction):
         """Return the active loss weights for logging / inspection."""
         terms = {}
         for term in (
-            "fape", "supervised_chi", "masked_msa", "distogram",
-            "plddt_loss", "experimentally_resolved",
+            "fape",
+            "supervised_chi",
+            "masked_msa",
+            "distogram",
+            "plddt_loss",
+            "experimentally_resolved",
         ):
-            try:
+            with contextlib.suppress(Exception):
                 terms[term] = float(self._loss_config[term].weight)
-            except Exception:
-                pass
         return {"type": "OpenFoldLoss", "loss_weights": terms}

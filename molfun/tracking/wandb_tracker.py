@@ -5,7 +5,6 @@ Requires: pip install wandb
 """
 
 from __future__ import annotations
-from typing import Optional
 
 from molfun.tracking.base import BaseTracker
 
@@ -25,11 +24,12 @@ class WandbTracker(BaseTracker):
     def __init__(
         self,
         project: str = "molfun",
-        entity: Optional[str] = None,
+        entity: str | None = None,
         **wandb_init_kwargs,
     ):
         try:
             import wandb
+
             self._wandb = wandb
         except ImportError:
             raise ImportError(

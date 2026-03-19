@@ -33,29 +33,28 @@ Usage::
     alignment = A3MParser().parse_file("msas/1abc.a3m")
 """
 
+from molfun.data.parsers.a3m import A3MParser
 from molfun.data.parsers.base import (
-    BaseStructureParser,
-    BaseLigandParser,
     BaseAlignmentParser,
-    ParsedStructure,
-    ParsedMolecule,
+    BaseLigandParser,
+    BaseStructureParser,
+    ParsedAlignment,
     ParsedAtom,
     ParsedBond,
-    ParsedAlignment,
+    ParsedMolecule,
+    ParsedStructure,
 )
-from molfun.data.parsers.residue import (
-    THREE_TO_ONE,
-    ONE_TO_THREE,
-    AA_TO_IDX,
-    IDX_TO_AA,
-    BACKBONE_ATOMS,
-)
-from molfun.data.parsers.pdb import PDBParser
-from molfun.data.parsers.a3m import A3MParser
 from molfun.data.parsers.fasta import FASTAParser
-from molfun.data.parsers.sdf import SDFParser
 from molfun.data.parsers.mol2 import MOL2Parser
-
+from molfun.data.parsers.pdb import PDBParser
+from molfun.data.parsers.residue import (
+    AA_TO_IDX,
+    BACKBONE_ATOMS,
+    IDX_TO_AA,
+    ONE_TO_THREE,
+    THREE_TO_ONE,
+)
+from molfun.data.parsers.sdf import SDFParser
 
 __all__ = [
     # Base classes
@@ -97,6 +96,7 @@ def _build_registry():
             PARSER_REGISTRY[ext] = cls
     try:
         from molfun.data.parsers.mmcif import CIFParser
+
         for ext in CIFParser.extensions():
             PARSER_REGISTRY[ext] = CIFParser
     except ImportError:
@@ -133,15 +133,13 @@ def auto_parser(path: str, **kwargs):
             return cls(**filtered)
 
     available = sorted(set(PARSER_REGISTRY.keys()))
-    raise ValueError(
-        f"No parser found for '{path}'. "
-        f"Supported extensions: {available}"
-    )
+    raise ValueError(f"No parser found for '{path}'. Supported extensions: {available}")
 
 
 def _lazy_cifparser(name):
     if name == "CIFParser":
         from molfun.data.parsers.mmcif import CIFParser
+
         return CIFParser
     raise AttributeError(f"module has no attribute {name!r}")
 

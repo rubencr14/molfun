@@ -442,33 +442,37 @@ class TestQueryBuilders:
 
     def test_resolution_node_structure(self):
         node = _resolution_node(2.5)
-        assert node["type"] == "terminal"
-        assert node["parameters"]["value"] == 2.5
-        assert node["parameters"]["operator"] == "less_or_equal"
+        assert node["type"] == "group"
+        inner = node["nodes"][0]
+        assert inner["type"] == "terminal"
+        assert inner["parameters"]["value"] == 2.5
+        assert inner["parameters"]["operator"] == "less_or_equal"
 
     def test_pfam_node_structure(self):
         node = _pfam_node("PF00069")
-        assert node["parameters"]["value"] == "PF00069"
-        assert "annotation_id" in node["parameters"]["attribute"]
+        inner = node["nodes"][0]
+        assert inner["parameters"]["value"] == "PF00069"
+        assert "annotation_id" in inner["parameters"]["attribute"]
 
     def test_ec_node_strips_wildcard(self):
         node = _ec_node("2.7.*")
-        assert node["parameters"]["value"] == "2.7"
+        assert node["nodes"][0]["parameters"]["value"] == "2.7"
         node2 = _ec_node("2.7.11.1")
-        assert node2["parameters"]["value"] == "2.7.11.1"
+        assert node2["nodes"][0]["parameters"]["value"] == "2.7.11.1"
 
     def test_go_node_structure(self):
         node = _go_node("GO:0004672")
-        assert node["parameters"]["value"] == "GO:0004672"
+        assert node["nodes"][0]["parameters"]["value"] == "GO:0004672"
 
     def test_taxonomy_node_converts_to_str(self):
         node = _taxonomy_node(9606)
-        assert node["parameters"]["value"] == "9606"
+        assert node["nodes"][0]["parameters"]["value"] == "9606"
 
     def test_keyword_node_uses_full_text(self):
         node = _keyword_node("tyrosine kinase")
-        assert node["service"] == "full_text"
-        assert node["parameters"]["value"] == "tyrosine kinase"
+        inner = node["nodes"][0]
+        assert inner["service"] == "full_text"
+        assert inner["parameters"]["value"] == "tyrosine kinase"
 
     def test_and_query_wraps_nodes(self):
         q = _and_query(_pfam_node("PF00069"), _resolution_node(3.0))

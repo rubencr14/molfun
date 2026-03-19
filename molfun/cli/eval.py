@@ -3,16 +3,19 @@ CLI command for evaluating a trained model checkpoint.
 """
 
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
 
 def eval_model(
     checkpoint: Annotated[Path, typer.Argument(help="Path to saved model checkpoint directory.")],
-    pdbs: Annotated[Path, typer.Option(help="Directory with PDB/CIF test structures.")] = Path("data/structures"),
-    data: Annotated[Optional[Path], typer.Option(help="CSV with pdb_id and affinity columns.")] = None,
+    pdbs: Annotated[Path, typer.Option(help="Directory with PDB/CIF test structures.")] = Path(
+        "data/structures"
+    ),
+    data: Annotated[Path | None, typer.Option(help="CSV with pdb_id and affinity columns.")] = None,
     device: Annotated[str, typer.Option(help="Device: cuda, cpu, mps.")] = "cpu",
     max_seq_len: Annotated[int, typer.Option(help="Max sequence length.")] = 256,
     batch_size: Annotated[int, typer.Option(help="Evaluation batch size.")] = 1,
@@ -20,8 +23,6 @@ def eval_model(
 ):
     """Evaluate a trained model checkpoint on test data."""
     import json
-    import torch
-    from torch.utils.data import DataLoader
 
     if not checkpoint.exists():
         raise typer.BadParameter(f"Checkpoint not found: {checkpoint}")
@@ -47,27 +48,34 @@ def eval_model(
         typer.echo(f"{'─' * 40}")
 
 
-def _build_eval_loader(pdbs: Path, data_csv: Optional[Path], max_seq_len: int, batch_size: int):
+def _build_eval_loader(pdbs: Path, data_csv: Path | None, max_seq_len: int, batch_size: int):
     from torch.utils.data import DataLoader
 
     if data_csv and data_csv.exists():
         from molfun.data import AffinityDataset
+
         dataset = AffinityDataset.from_csv(str(data_csv), str(pdbs))
-        return DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=AffinityDataset.collate_fn)
+        return DataLoader(
+            dataset, batch_size=batch_size, shuffle=False, collate_fn=AffinityDataset.collate_fn
+        )
     elif pdbs.exists() and pdbs.is_dir():
         from molfun.data.datasets.structure import StructureDataset, collate_structure_batch
+
         pdb_paths = sorted(pdbs.glob("*.pdb")) + sorted(pdbs.glob("*.cif"))
         if not pdb_paths:
             raise typer.BadParameter(f"No PDB/CIF files found in {pdbs}")
         dataset = StructureDataset(pdb_paths=pdb_paths, max_seq_len=max_seq_len)
-        return DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_structure_batch)
+        return DataLoader(
+            dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_structure_batch
+        )
     else:
         raise typer.BadParameter(f"Provide --data CSV or PDB directory. Path not found: {pdbs}")
 
 
 def _evaluate(model, loader) -> dict:
     import torch
-    from molfun.helpers.training import unpack_batch, to_device
+
+    from molfun.helpers.training import to_device, unpack_batch
 
     model.adapter.eval()
     if model.head is not None:

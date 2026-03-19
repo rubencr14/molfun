@@ -28,7 +28,7 @@ Usage::
 """
 
 from __future__ import annotations
-from typing import Optional
+
 import json
 import os
 
@@ -46,8 +46,8 @@ class OpenAIBackend(BaseLLM):
     def __init__(
         self,
         model: str = "gpt-4o-mini",
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         temperature: float = 0.3,
         max_tokens: int = 4096,
     ):
@@ -70,7 +70,7 @@ class OpenAIBackend(BaseLLM):
     def chat(
         self,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
+        tools: list[dict] | None = None,
     ) -> LLMResponse:
         kwargs = {
             "model": self.model,
@@ -102,11 +102,13 @@ class OpenAIBackend(BaseLLM):
                     args = json.loads(tc.function.arguments)
                 except (json.JSONDecodeError, TypeError):
                     args = {}
-                tool_calls.append(ToolCall(
-                    id=tc.id,
-                    name=tc.function.name,
-                    arguments=args,
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        arguments=args,
+                    )
+                )
 
         return LLMResponse(
             text=msg.content,

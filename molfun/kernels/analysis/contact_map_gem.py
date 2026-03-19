@@ -48,17 +48,11 @@ import triton.language as tl
 
 @triton.jit
 def contact_map_kernel_tiled(
-    x_ptr, y_ptr, z_ptr,
-    out_ptr,
-    N,
-    n_bytes,
-    out_stride_row,
-    cutoff2,
-    BLOCK_SIZE_ROW: tl.constexpr
+    x_ptr, y_ptr, z_ptr, out_ptr, N, n_bytes, out_stride_row, cutoff2, BLOCK_SIZE_ROW: tl.constexpr
 ):
     """
     Optimized kernel with tiling and vectorization.
-    
+
     - Processes a block of rows (BLOCK_SIZE_ROW) at a time
     - Vectorizes 8 columns simultaneously to pack one byte at once
     - Uses arithmetic bitpacking instead of bit shifts
@@ -66,7 +60,7 @@ def contact_map_kernel_tiled(
     # Row block identifier (e.g., rows 0-63, 64-127, ...)
     pid = tl.program_id(0)
     row_start = pid * BLOCK_SIZE_ROW
-    
+
     # Offsets for rows this program will process
     rows_offs = row_start + tl.arange(0, BLOCK_SIZE_ROW)
     mask_rows = rows_offs < N
@@ -112,7 +106,7 @@ def contact_map_kernel_tiled(
         # Boolean comparison [BLOCK_ROW, 8]
         # Also exclude diagonal (row != col)
         is_contact = (dist2 < cutoff2) & (rows_offs[:, None] != cols_offs[None, :])
-        
+
         # Apply edge masks (if N is not multiple of 8 or BLOCK)
         is_contact = is_contact & mask_rows[:, None] & mask_cols[None, :]
 
@@ -130,48 +124,42 @@ def contact_map_kernel_tiled(
 def contact_map_atoms_bitpack_fast(coords: torch.Tensor, cutoff: float) -> torch.Tensor:
     """
     Compute atomic contact map with bitpacked output using optimized Triton kernel.
-    
+
     This version uses:
     - 1D grid over row blocks
     - Vectorized 8-column processing
     - Arithmetic bitpacking (no branches)
-    
+
     Args:
         coords: [N, 3] CUDA tensor with atom coordinates
         cutoff: Distance cutoff for contacts
-    
+
     Returns:
         Packed contact map [N, ceil(N/8)] as uint8 tensor.
     """
     assert coords.is_cuda, "coords must be on CUDA"
     assert coords.ndim == 2 and coords.shape[1] == 3, "coords must be [N, 3]"
-    
+
     N = coords.shape[0]
     n_bytes = (N + 7) // 8
-    
+
     # Output packed tensor
     out = torch.zeros((N, n_bytes), device=coords.device, dtype=torch.uint8)
-    
+
     x = coords[:, 0].contiguous()
     y = coords[:, 1].contiguous()
     z = coords[:, 2].contiguous()
-    
+
     cutoff2 = float(cutoff * cutoff)
-    
+
     # Tuning: Block size 128 is usually a good sweet spot
     BLOCK_SIZE_ROW = 128
-    
+
     # 1D Grid: Number of blocks needed to cover N rows
     grid = (triton.cdiv(N, BLOCK_SIZE_ROW),)
-    
+
     contact_map_kernel_tiled[grid](
-        x, y, z,
-        out,
-        N,
-        n_bytes,
-        out.stride(0),
-        cutoff2,
-        BLOCK_SIZE_ROW=BLOCK_SIZE_ROW
+        x, y, z, out, N, n_bytes, out.stride(0), cutoff2, BLOCK_SIZE_ROW=BLOCK_SIZE_ROW
     )
-    
+
     return out

@@ -12,27 +12,28 @@ Consumers depend on these abstractions, never on concrete parsers
 """
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
 
 import torch
 
 from molfun.data.storage import open_path
 
-
 # ======================================================================
 # Parsed data structures (value objects)
 # ======================================================================
 
+
 @dataclass
 class ParsedStructure:
     """Standardized output from any structure parser."""
+
     sequence: str
-    residue_index: torch.Tensor       # [L]
-    all_atom_positions: torch.Tensor   # [L, 3] (CA coords)
-    all_atom_mask: torch.Tensor        # [L]
-    seq_length: torch.Tensor           # [1]
+    residue_index: torch.Tensor  # [L]
+    all_atom_positions: torch.Tensor  # [L, 3] (CA coords)
+    all_atom_mask: torch.Tensor  # [L]
+    seq_length: torch.Tensor  # [1]
     chain_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -51,6 +52,7 @@ class ParsedStructure:
 @dataclass
 class ParsedAtom:
     """Single atom in a molecule."""
+
     index: int
     element: str
     x: float
@@ -65,6 +67,7 @@ class ParsedAtom:
 @dataclass
 class ParsedBond:
     """Bond between two atoms."""
+
     atom1: int
     atom2: int
     order: int = 1  # 1=single, 2=double, 3=triple, 4=aromatic
@@ -73,6 +76,7 @@ class ParsedBond:
 @dataclass
 class ParsedMolecule:
     """Standardized output from any ligand parser."""
+
     name: str
     atoms: list[ParsedAtom]
     bonds: list[ParsedBond]
@@ -112,9 +116,10 @@ class ParsedMolecule:
 @dataclass
 class ParsedAlignment:
     """Standardized output from any alignment parser."""
-    msa: torch.Tensor            # [N, L] residue indices
+
+    msa: torch.Tensor  # [N, L] residue indices
     deletion_matrix: torch.Tensor  # [N, L]
-    msa_mask: torch.Tensor        # [N, L]
+    msa_mask: torch.Tensor  # [N, L]
     sequences: list[str] = field(default_factory=list)
     headers: list[str] = field(default_factory=list)
 
@@ -138,6 +143,7 @@ class ParsedAlignment:
 # Abstract base parsers (Interface Segregation)
 # ======================================================================
 
+
 class BaseStructureParser(ABC):
     """
     Parse macromolecular structure files.
@@ -157,7 +163,7 @@ class BaseStructureParser(ABC):
     def parse_file(
         self,
         path: str,
-        storage_options: Optional[dict] = None,
+        storage_options: dict | None = None,
     ) -> ParsedStructure:
         """Parse from a local or remote file path."""
         with open_path(path, "r", storage_options) as f:
@@ -185,7 +191,7 @@ class BaseLigandParser(ABC):
     def parse_file(
         self,
         path: str,
-        storage_options: Optional[dict] = None,
+        storage_options: dict | None = None,
     ) -> list[ParsedMolecule]:
         """Parse from a local or remote file path."""
         with open_path(path, "r", storage_options) as f:
@@ -215,12 +221,13 @@ class BaseAlignmentParser(ABC):
     def parse_file(
         self,
         path: str,
-        storage_options: Optional[dict] = None,
+        storage_options: dict | None = None,
     ) -> ParsedAlignment:
         """Parse from a local or remote file path."""
         mode = "r"
         if str(path).endswith(".gz"):
             import gzip
+
             with open_path(path, "rb", storage_options) as f:
                 text = gzip.decompress(f.read()).decode()
             return self.parse_text(text)

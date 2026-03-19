@@ -17,8 +17,9 @@ class TMScoreLoss(LossFunction):
 """
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Optional
+
 import torch
 import torch.nn as nn
 
@@ -44,8 +45,8 @@ class LossFunction(ABC, nn.Module):
     def forward(
         self,
         preds: torch.Tensor,
-        targets: Optional[torch.Tensor] = None,
-        batch: Optional[dict] = None,
+        targets: torch.Tensor | None = None,
+        batch: dict | None = None,
     ) -> dict[str, torch.Tensor]:
         """Compute loss and return a dict of named scalar tensors."""
 
@@ -72,17 +73,17 @@ class LossRegistry:
 
     def register(self, name: str):
         """Decorator: ``@LOSS_REGISTRY.register("name")``."""
+
         def decorator(cls: type[LossFunction]):
             self._registry[name] = cls
             return cls
+
         return decorator
 
     def __getitem__(self, name: str) -> type[LossFunction]:
         if name not in self._registry:
             available = sorted(self._registry)
-            raise KeyError(
-                f"Loss '{name}' not found. Available: {available}"
-            )
+            raise KeyError(f"Loss '{name}' not found. Available: {available}")
         return self._registry[name]
 
     def __contains__(self, name: str) -> bool:

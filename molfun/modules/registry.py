@@ -19,7 +19,9 @@ Usage
 """
 
 from __future__ import annotations
-from typing import Any, Optional
+
+from typing import Any
+
 import torch.nn as nn
 
 
@@ -32,7 +34,7 @@ class ModuleRegistry:
     registered classes inherit from a given base.
     """
 
-    def __init__(self, name: str, base_class: Optional[type] = None):
+    def __init__(self, name: str, base_class: type | None = None):
         """
         Args:
             name: Human-readable family name (for error messages).
@@ -50,6 +52,7 @@ class ModuleRegistry:
             @REGISTRY.register("my_module")
             class MyModule(BaseModule): ...
         """
+
         def decorator(cls: type):
             if self.base_class is not None and not issubclass(cls, self.base_class):
                 raise TypeError(
@@ -64,6 +67,7 @@ class ModuleRegistry:
                 )
             self._registry[name] = cls
             return cls
+
         return decorator
 
     def build(self, name: str, **kwargs: Any) -> nn.Module:
@@ -71,7 +75,7 @@ class ModuleRegistry:
         cls = self[name]
         return cls(**kwargs)
 
-    def get(self, name: str) -> Optional[type[nn.Module]]:
+    def get(self, name: str) -> type[nn.Module] | None:
         """Return the class or None (no KeyError)."""
         return self._registry.get(name)
 
@@ -85,8 +89,7 @@ class ModuleRegistry:
         if name not in self._registry:
             available = sorted(self._registry)
             raise KeyError(
-                f"Module '{name}' not found in {self.name} registry. "
-                f"Available: {available}"
+                f"Module '{name}' not found in {self.name} registry. Available: {available}"
             )
         return self._registry[name]
 

@@ -14,6 +14,7 @@ Compatible with any .env loader (python-dotenv, direnv, etc.).
 """
 
 from __future__ import annotations
+
 import os
 
 from molfun.storage.base import ObjectStorage
@@ -49,7 +50,7 @@ class MinioStorage(ObjectStorage):
         self._secure = secure
 
     @classmethod
-    def from_env(cls) -> "MinioStorage":
+    def from_env(cls) -> MinioStorage:
         """
         Build from MINIO_* environment variables.
 
@@ -58,6 +59,7 @@ class MinioStorage(ObjectStorage):
         """
         try:
             from dotenv import load_dotenv
+
             load_dotenv(override=False)
         except ImportError:
             pass
@@ -113,6 +115,7 @@ class MinioStorage(ObjectStorage):
 
     def _client(self):
         from minio import Minio
+
         return Minio(
             f"{self._endpoint}:{self._port}",
             access_key=self._access_key,
@@ -138,6 +141,7 @@ class MinioStorage(ObjectStorage):
             not_in_minio = IDs that don't exist in MinIO (need RCSB).
         """
         from pathlib import Path
+
         local = Path(local_dir)
         local.mkdir(parents=True, exist_ok=True)
 
@@ -176,6 +180,7 @@ class MinioStorage(ObjectStorage):
         Returns number of files uploaded.
         """
         from pathlib import Path
+
         local = Path(local_dir)
 
         client = self._client()

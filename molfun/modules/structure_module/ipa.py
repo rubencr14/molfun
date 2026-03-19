@@ -15,7 +15,7 @@ Architecture:
 """
 
 from __future__ import annotations
-from typing import Optional
+
 import math
 
 import torch
@@ -23,9 +23,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from molfun.modules.structure_module.base import (
+    STRUCTURE_MODULE_REGISTRY,
     BaseStructureModule,
     StructureModuleOutput,
-    STRUCTURE_MODULE_REGISTRY,
 )
 
 
@@ -55,17 +55,19 @@ class IPAStructureModule(BaseStructureModule):
         self._d_pair = d_pair
         self.n_layers = n_layers
 
-        self.layers = nn.ModuleList([
-            _IPALayer(
-                d_single=d_single,
-                d_pair=d_pair,
-                n_heads=n_heads,
-                n_query_points=n_query_points,
-                n_value_points=n_value_points,
-                dropout=dropout,
-            )
-            for _ in range(n_layers)
-        ])
+        self.layers = nn.ModuleList(
+            [
+                _IPALayer(
+                    d_single=d_single,
+                    d_pair=d_pair,
+                    n_heads=n_heads,
+                    n_query_points=n_query_points,
+                    n_value_points=n_value_points,
+                    dropout=dropout,
+                )
+                for _ in range(n_layers)
+            ]
+        )
 
         self.norm = nn.LayerNorm(d_single)
         self.pos_proj = nn.Linear(d_single, 3)
@@ -74,8 +76,8 @@ class IPAStructureModule(BaseStructureModule):
         self,
         single: torch.Tensor,
         pair: torch.Tensor,
-        aatype: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
+        aatype: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
         **kwargs,
     ) -> StructureModuleOutput:
         B, L, _ = single.shape
@@ -148,7 +150,7 @@ class _IPALayer(nn.Module):
         self,
         s: torch.Tensor,
         pair: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         B, L, _ = s.shape
         H, D = self.n_heads, self.head_dim

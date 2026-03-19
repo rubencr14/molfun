@@ -6,9 +6,9 @@ context windows, and tracks the best experiment so far.
 """
 
 from __future__ import annotations
-from typing import Optional
-from pathlib import Path
+
 import json
+from pathlib import Path
 
 from molfun.agents.experiment import Experiment
 
@@ -22,7 +22,7 @@ class ExperimentMemory:
     persists everything to disk so the agent can resume after a crash.
     """
 
-    def __init__(self, persist_path: Optional[str] = None):
+    def __init__(self, persist_path: str | None = None):
         self.experiments: list[Experiment] = []
         self.reasoning_log: list[str] = []
         self._persist_path = Path(persist_path) if persist_path else None
@@ -67,7 +67,7 @@ class ExperimentMemory:
     def failed(self) -> list[Experiment]:
         return [e for e in self.experiments if e.status == "failed"]
 
-    def best(self, metric: str = "val_loss", minimize: bool = True) -> Optional[Experiment]:
+    def best(self, metric: str = "val_loss", minimize: bool = True) -> Experiment | None:
         candidates = self.completed
         if not candidates:
             return None
@@ -83,7 +83,7 @@ class ExperimentMemory:
 
         return min(candidates, key=key) if minimize else max(candidates, key=key)
 
-    def get(self, experiment_id: str) -> Optional[Experiment]:
+    def get(self, experiment_id: str) -> Experiment | None:
         for exp in self.experiments:
             if exp.id == experiment_id:
                 return exp
@@ -108,9 +108,7 @@ class ExperimentMemory:
         n_total = len(self.experiments)
         n_ok = len(self.completed)
         n_fail = len(self.failed)
-        lines.append(
-            f"EXPERIMENT MEMORY: {n_total} total ({n_ok} completed, {n_fail} failed)"
-        )
+        lines.append(f"EXPERIMENT MEMORY: {n_total} total ({n_ok} completed, {n_fail} failed)")
 
         best_exp = self.best()
         if best_exp:
@@ -133,7 +131,7 @@ class ExperimentMemory:
                 lines.append(f"  {exp.summary_line()}")
 
         if self.failed:
-            lines.append(f"\nRECENT FAILURES:")
+            lines.append("\nRECENT FAILURES:")
             for exp in self.failed[-3:]:
                 lines.append(f"  [{exp.id}] {exp.config.short_description()}: {exp.error}")
 

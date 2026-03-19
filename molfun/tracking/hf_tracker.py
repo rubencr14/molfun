@@ -12,11 +12,11 @@ Requires: pip install huggingface_hub  (or pip install molfun[hub])
 """
 
 from __future__ import annotations
-from pathlib import Path
-from typing import Optional
+
 import json
 import logging
 import tempfile
+from pathlib import Path
 
 from molfun.tracking.base import BaseTracker
 
@@ -53,7 +53,7 @@ class HuggingFaceTracker(BaseTracker):
     def __init__(
         self,
         repo_id: str,
-        token: Optional[str] = None,
+        token: str | None = None,
         private: bool = False,
         repo_type: str = "model",
     ):
@@ -76,7 +76,7 @@ class HuggingFaceTracker(BaseTracker):
         self.repo_type = repo_type
         self._private = private
         self._api = HfApi(token=token)
-        self._run_name: Optional[str] = None
+        self._run_name: str | None = None
         self._config: dict = {}
         self._metrics: dict = {}
         self._metrics_history: list[dict] = []
@@ -101,16 +101,16 @@ class HuggingFaceTracker(BaseTracker):
 
     def start_run(
         self,
-        name: Optional[str] = None,
-        tags: Optional[list[str]] = None,
-        config: Optional[dict] = None,
+        name: str | None = None,
+        tags: list[str] | None = None,
+        config: dict | None = None,
     ) -> None:
         self._run_name = name
         self._tags = tags or []
         if config:
             self._config.update(config)
 
-    def log_metrics(self, metrics: dict, step: Optional[int] = None) -> None:
+    def log_metrics(self, metrics: dict, step: int | None = None) -> None:
         self._metrics.update(metrics)
         entry = {**metrics}
         if step is not None:
@@ -120,7 +120,7 @@ class HuggingFaceTracker(BaseTracker):
     def log_config(self, config: dict) -> None:
         self._config.update(config)
 
-    def log_artifact(self, path: str, name: Optional[str] = None) -> None:
+    def log_artifact(self, path: str, name: str | None = None) -> None:
         """Upload a file or directory to the HF Hub repo."""
         self._ensure_repo()
         p = Path(path)
@@ -202,9 +202,10 @@ class HuggingFaceTracker(BaseTracker):
             )
         logger.info(f"Model card pushed to {self.repo_id}")
 
-    def download_repo(self, local_dir: str, revision: Optional[str] = None) -> str:
+    def download_repo(self, local_dir: str, revision: str | None = None) -> str:
         """Download the full repo to a local directory."""
         from huggingface_hub import snapshot_download
+
         return snapshot_download(
             repo_id=self.repo_id,
             repo_type=self.repo_type,

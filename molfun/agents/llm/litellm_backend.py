@@ -25,7 +25,7 @@ See https://docs.litellm.ai/docs/providers for full provider list.
 """
 
 from __future__ import annotations
-from typing import Optional
+
 import json
 
 from molfun.agents.llm.base import BaseLLM, LLMResponse, ToolCall
@@ -45,13 +45,14 @@ class LiteLLMBackend(BaseLLM):
         model: str = "gpt-4o-mini",
         temperature: float = 0.3,
         max_tokens: int = 4096,
-        api_base: Optional[str] = None,
+        api_base: str | None = None,
     ):
         super().__init__(model=model, temperature=temperature, max_tokens=max_tokens)
         self.api_base = api_base
 
         try:
             import litellm
+
             self._litellm = litellm
         except ImportError:
             raise ImportError("litellm package required: pip install litellm")
@@ -59,7 +60,7 @@ class LiteLLMBackend(BaseLLM):
     def chat(
         self,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
+        tools: list[dict] | None = None,
     ) -> LLMResponse:
         kwargs = {
             "model": self.model,
@@ -89,14 +90,20 @@ class LiteLLMBackend(BaseLLM):
         if msg.tool_calls:
             for tc in msg.tool_calls:
                 try:
-                    args = json.loads(tc.function.arguments) if isinstance(tc.function.arguments, str) else tc.function.arguments
+                    args = (
+                        json.loads(tc.function.arguments)
+                        if isinstance(tc.function.arguments, str)
+                        else tc.function.arguments
+                    )
                 except (json.JSONDecodeError, TypeError):
                     args = {}
-                tool_calls.append(ToolCall(
-                    id=tc.id or f"litellm_{len(tool_calls)}",
-                    name=tc.function.name,
-                    arguments=args,
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.id or f"litellm_{len(tool_calls)}",
+                        name=tc.function.name,
+                        arguments=args,
+                    )
+                )
 
         return LLMResponse(
             text=msg.content,

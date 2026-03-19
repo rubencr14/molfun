@@ -1,8 +1,8 @@
 """Base adapter interface that all model adapters must implement."""
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Optional
 
 import torch.nn as nn
 
@@ -22,16 +22,13 @@ class BaseAdapter(nn.Module, ABC):
     """
 
     @abstractmethod
-    def forward(self, batch: dict) -> TrunkOutput:
-        ...
+    def forward(self, batch: dict) -> TrunkOutput: ...
 
     @abstractmethod
-    def freeze_trunk(self) -> None:
-        ...
+    def freeze_trunk(self) -> None: ...
 
     @abstractmethod
-    def unfreeze_trunk(self) -> None:
-        ...
+    def unfreeze_trunk(self) -> None: ...
 
     @abstractmethod
     def get_trunk_blocks(self) -> nn.ModuleList:
@@ -53,14 +50,13 @@ class BaseAdapter(nn.Module, ABC):
         ...
 
     @abstractmethod
-    def param_summary(self) -> dict[str, int]:
-        ...
+    def param_summary(self) -> dict[str, int]: ...
 
     # ------------------------------------------------------------------
     # Optional overrides — sensible defaults for simple adapters
     # ------------------------------------------------------------------
 
-    def get_structure_module(self) -> Optional[nn.Module]:
+    def get_structure_module(self) -> nn.Module | None:
         """
         Return the structure prediction module (IPA, diffusion, etc.).
 
@@ -72,7 +68,7 @@ class BaseAdapter(nn.Module, ABC):
         """
         return None
 
-    def get_input_embedder(self) -> Optional[nn.Module]:
+    def get_input_embedder(self) -> nn.Module | None:
         """
         Return the input embedding module.
 

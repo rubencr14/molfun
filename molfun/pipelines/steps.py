@@ -17,6 +17,7 @@ Available steps:
 """
 
 from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ StateDict = dict[str, Any]
 # ------------------------------------------------------------------
 # Fetch
 # ------------------------------------------------------------------
+
 
 def fetch_step(state: StateDict) -> StateDict:
     """
@@ -63,19 +65,26 @@ def fetch_step(state: StateDict) -> StateDict:
     identity = state.get("identity", 0.3)
 
     fetcher = PDBFetcher(
-        cache_dir=output_dir, fmt=fmt,
-        workers=workers, progress=progress,
+        cache_dir=output_dir,
+        fmt=fmt,
+        workers=workers,
+        progress=progress,
     )
 
     collection = state.get("collection")
     if collection:
         from molfun.data.collections import fetch_collection
+
         paths = fetch_collection(
             collection,
-            cache_dir=output_dir, fmt=fmt,
-            max_structures=max_s, resolution_max=res,
-            deduplicate=dedup, identity=identity,
-            workers=workers, progress=progress,
+            cache_dir=output_dir,
+            fmt=fmt,
+            max_structures=max_s,
+            resolution_max=res,
+            deduplicate=dedup,
+            identity=identity,
+            workers=workers,
+            progress=progress,
         )
     else:
         pdb_ids = fetcher.search_ids(
@@ -89,6 +98,7 @@ def fetch_step(state: StateDict) -> StateDict:
         )
         if dedup and pdb_ids:
             from molfun.data.sources.pdb import deduplicate_by_sequence
+
             pdb_ids = deduplicate_by_sequence(pdb_ids, identity=identity)
         paths = fetcher.fetch(pdb_ids)
 
@@ -98,6 +108,7 @@ def fetch_step(state: StateDict) -> StateDict:
 # ------------------------------------------------------------------
 # Split
 # ------------------------------------------------------------------
+
 
 def split_step(state: StateDict) -> StateDict:
     """
@@ -121,6 +132,7 @@ def split_step(state: StateDict) -> StateDict:
     seed = state.get("seed", 42)
 
     import random
+
     rng = random.Random(seed)
     paths = list(pdb_paths)
     rng.shuffle(paths)
@@ -149,6 +161,7 @@ def split_step(state: StateDict) -> StateDict:
 # Build Dataset
 # ------------------------------------------------------------------
 
+
 def build_dataset_step(state: StateDict) -> StateDict:
     """
     Build StructureDataset and DataLoaders from split paths.
@@ -164,8 +177,8 @@ def build_dataset_step(state: StateDict) -> StateDict:
         state["train_loader"], state["val_loader"]
         Optionally state["test_loader"] if test_paths present.
     """
-    import torch
     from torch.utils.data import DataLoader
+
     from molfun.data.datasets.structure import StructureDataset, collate_structure_batch
 
     max_seq_len = state.get("max_seq_len", 256)
@@ -178,11 +191,15 @@ def build_dataset_step(state: StateDict) -> StateDict:
     val_ds = StructureDataset(pdb_paths=val_paths, max_seq_len=max_seq_len)
 
     train_loader = DataLoader(
-        train_ds, batch_size=batch_size, shuffle=True,
+        train_ds,
+        batch_size=batch_size,
+        shuffle=True,
         collate_fn=collate_structure_batch,
     )
     val_loader = DataLoader(
-        val_ds, batch_size=batch_size, shuffle=False,
+        val_ds,
+        batch_size=batch_size,
+        shuffle=False,
         collate_fn=collate_structure_batch,
     )
 
@@ -199,7 +216,9 @@ def build_dataset_step(state: StateDict) -> StateDict:
             max_seq_len=max_seq_len,
         )
         result["test_loader"] = DataLoader(
-            test_ds, batch_size=batch_size, shuffle=False,
+            test_ds,
+            batch_size=batch_size,
+            shuffle=False,
             collate_fn=collate_structure_batch,
         )
 
@@ -209,6 +228,7 @@ def build_dataset_step(state: StateDict) -> StateDict:
 # ------------------------------------------------------------------
 # Train
 # ------------------------------------------------------------------
+
 
 def train_step(state: StateDict) -> StateDict:
     """
@@ -245,7 +265,10 @@ def train_step(state: StateDict) -> StateDict:
     model = state.get("model")
     if model is None:
         from molfun.models.structure import MolfunStructureModel
-        weights = state.get("weights", str(Path.home() / ".molfun" / "weights" / "finetuning_ptm_2.pt"))
+
+        weights = state.get(
+            "weights", str(Path.home() / ".molfun" / "weights" / "finetuning_ptm_2.pt")
+        )
         model_name = state.get("model_name", "openfold")
         head = state.get("head", "structure")
 
@@ -282,26 +305,34 @@ def _build_strategy(name: str, lr: float, rank: int, unfreeze: int, warmup: int,
     )
     if name == "lora":
         from molfun.training.lora import LoRAFinetune
+
         return LoRAFinetune(
-            rank=rank, alpha=rank * 2,
+            rank=rank,
+            alpha=rank * 2,
             target_modules=["linear_q", "linear_v"],
-            lr_lora=lr, **common,
+            lr_lora=lr,
+            **common,
         )
     if name == "partial":
         from molfun.training.partial import PartialFinetune
+
         return PartialFinetune(
             unfreeze_last_n=unfreeze,
             unfreeze_structure_module=True,
-            lr_trunk=lr, **common,
+            lr_trunk=lr,
+            **common,
         )
     if name == "full":
         from molfun.training.full import FullFinetune
+
         return FullFinetune(
-            lr=lr, accumulation_steps=8,
+            lr=lr,
+            accumulation_steps=8,
             **{k: v for k, v in common.items() if k != "accumulation_steps"},
         )
     if name == "head_only":
         from molfun.training.head_only import HeadOnlyFinetune
+
         return HeadOnlyFinetune(lr=lr, **common)
     raise ValueError(f"Unknown strategy: {name}")
 
@@ -309,6 +340,7 @@ def _build_strategy(name: str, lr: float, rank: int, unfreeze: int, warmup: int,
 # ------------------------------------------------------------------
 # Eval
 # ------------------------------------------------------------------
+
 
 def eval_step(state: StateDict) -> StateDict:
     """
@@ -325,7 +357,8 @@ def eval_step(state: StateDict) -> StateDict:
         state["eval_metrics"]
     """
     import torch
-    from molfun.helpers.training import unpack_batch, to_device
+
+    from molfun.helpers.training import to_device, unpack_batch
 
     model = state["model"]
     loader = state.get("test_loader", state.get("val_loader"))
@@ -375,6 +408,7 @@ def eval_step(state: StateDict) -> StateDict:
 # Save
 # ------------------------------------------------------------------
 
+
 def save_step(state: StateDict) -> StateDict:
     """
     Save model checkpoint to disk.
@@ -396,6 +430,7 @@ def save_step(state: StateDict) -> StateDict:
     history = state.get("training_history")
     if history:
         import torch
+
         torch.save(history, Path(ckpt_dir) / "history.pt")
 
     return {**state, "checkpoint_path": ckpt_dir}
@@ -404,6 +439,7 @@ def save_step(state: StateDict) -> StateDict:
 # ------------------------------------------------------------------
 # Push to Hub
 # ------------------------------------------------------------------
+
 
 def push_step(state: StateDict) -> StateDict:
     """
@@ -442,6 +478,7 @@ def push_step(state: StateDict) -> StateDict:
 # ==================================================================
 # Dataset loading (shared between head training and classical ML)
 # ==================================================================
+
 
 def load_dataset_step(state: StateDict) -> StateDict:
     """
@@ -515,9 +552,7 @@ def load_dataset_step(state: StateDict) -> StateDict:
             sep=state.get("sep"),
         )
     else:
-        raise ValueError(
-            f"Unknown source '{source}'. Available: 'csv', 'inline', 'fetch_csv'"
-        )
+        raise ValueError(f"Unknown source '{source}'. Available: 'csv', 'inline', 'fetch_csv'")
 
     out = {**state, "dataset": ds}
     out.update(ds.to_dict())
@@ -535,6 +570,7 @@ load_targets_step = load_dataset_step
 # ------------------------------------------------------------------
 # Featurize
 # ------------------------------------------------------------------
+
 
 def featurize_step(state: StateDict) -> StateDict:
     """
@@ -593,6 +629,7 @@ def _extract_sequences(pdb_paths: list) -> list[str]:
 # Split for sklearn
 # ------------------------------------------------------------------
 
+
 def split_sklearn_step(state: StateDict) -> StateDict:
     """
     Split features + targets into train/test for sklearn.
@@ -609,8 +646,8 @@ def split_sklearn_step(state: StateDict) -> StateDict:
         state["X_train"], state["X_test"], state["y_train"], state["y_test"]
         state["sequences_train"], state["sequences_test"] (if sequences present)
     """
-    from sklearn.model_selection import train_test_split
     import numpy as np
+    from sklearn.model_selection import train_test_split
 
     X = state["X"]
     y = np.asarray(state["y"])
@@ -621,28 +658,41 @@ def split_sklearn_step(state: StateDict) -> StateDict:
 
     if sequences is not None:
         X_tr, X_te, y_tr, y_te, seq_tr, seq_te = train_test_split(
-            X, y, sequences, test_size=val_frac, random_state=seed,
+            X,
+            y,
+            sequences,
+            test_size=val_frac,
+            random_state=seed,
         )
         return {
             **state,
-            "X_train": X_tr, "X_test": X_te,
-            "y_train": y_tr, "y_test": y_te,
-            "sequences_train": seq_tr, "sequences_test": seq_te,
+            "X_train": X_tr,
+            "X_test": X_te,
+            "y_train": y_tr,
+            "y_test": y_te,
+            "sequences_train": seq_tr,
+            "sequences_test": seq_te,
         }
     else:
         X_tr, X_te, y_tr, y_te = train_test_split(
-            X, y, test_size=val_frac, random_state=seed,
+            X,
+            y,
+            test_size=val_frac,
+            random_state=seed,
         )
         return {
             **state,
-            "X_train": X_tr, "X_test": X_te,
-            "y_train": y_tr, "y_test": y_te,
+            "X_train": X_tr,
+            "X_test": X_te,
+            "y_train": y_tr,
+            "y_test": y_te,
         }
 
 
 # ------------------------------------------------------------------
 # Train sklearn
 # ------------------------------------------------------------------
+
 
 def train_sklearn_step(state: StateDict) -> StateDict:
     """
@@ -668,22 +718,37 @@ def train_sklearn_step(state: StateDict) -> StateDict:
     features = state.get("features")
 
     estimator_params = {}
-    for k in ("n_estimators", "max_depth", "kernel", "C", "gamma",
-              "alpha", "max_iter", "n_neighbors", "learning_rate"):
+    for k in (
+        "n_estimators",
+        "max_depth",
+        "kernel",
+        "C",
+        "gamma",
+        "alpha",
+        "max_iter",
+        "n_neighbors",
+        "learning_rate",
+    ):
         if k in state:
             estimator_params[k] = state[k]
 
     if task == "classification":
         from molfun.ml.estimators import ProteinClassifier
+
         model = ProteinClassifier(
-            estimator=estimator, features=features,
-            scale=scale, **estimator_params,
+            estimator=estimator,
+            features=features,
+            scale=scale,
+            **estimator_params,
         )
     else:
         from molfun.ml.estimators import ProteinRegressor
+
         model = ProteinRegressor(
-            estimator=estimator, features=features,
-            scale=scale, **estimator_params,
+            estimator=estimator,
+            features=features,
+            scale=scale,
+            **estimator_params,
         )
 
     sequences_train = state.get("sequences_train")
@@ -703,6 +768,7 @@ def train_sklearn_step(state: StateDict) -> StateDict:
 # ------------------------------------------------------------------
 # Eval sklearn
 # ------------------------------------------------------------------
+
 
 def eval_sklearn_step(state: StateDict) -> StateDict:
     """
@@ -733,7 +799,7 @@ def eval_sklearn_step(state: StateDict) -> StateDict:
     if hasattr(model, "evaluate"):
         metrics = model.evaluate(X_test, y_test)
     else:
-        preds = model.predict(X_test)
+        model.predict(X_test)
         metrics = {
             "score": float(model.score(X_test, y_test)),
             "n_samples": len(y_test),
@@ -752,6 +818,7 @@ def eval_sklearn_step(state: StateDict) -> StateDict:
 # Save sklearn
 # ------------------------------------------------------------------
 
+
 def save_sklearn_step(state: StateDict) -> StateDict:
     """
     Save a trained sklearn model to disk.
@@ -769,6 +836,7 @@ def save_sklearn_step(state: StateDict) -> StateDict:
     model_path = state.get("model_path", "runs/model.joblib")
 
     from molfun.ml.io import save_model
+
     save_model(model, model_path)
 
     return {**state, "model_path": model_path}
@@ -777,6 +845,7 @@ def save_sklearn_step(state: StateDict) -> StateDict:
 # ==================================================================
 # Property head steps (backbone embeddings + head)
 # ==================================================================
+
 
 def extract_embeddings_step(state: StateDict) -> StateDict:
     """
@@ -842,8 +911,16 @@ def train_head_step(state: StateDict) -> StateDict:
     device = state.get("device", "cpu")
 
     head_params = {}
-    for k in ("hidden_dims", "epochs", "lr", "batch_size",
-              "n_estimators", "n_classes", "kernel", "C"):
+    for k in (
+        "hidden_dims",
+        "epochs",
+        "lr",
+        "batch_size",
+        "n_estimators",
+        "n_classes",
+        "kernel",
+        "C",
+    ):
         if k in state:
             head_params[k] = state[k]
 

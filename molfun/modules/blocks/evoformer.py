@@ -19,15 +19,12 @@ pre-trained AF2 weights, use OpenFoldAdapter.
 """
 
 from __future__ import annotations
-from typing import Optional
-import math
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from molfun.modules.blocks.base import BaseBlock, BlockOutput, BLOCK_REGISTRY
-from molfun.modules.attention.base import BaseAttention, ATTENTION_REGISTRY
+from molfun.modules.attention.base import ATTENTION_REGISTRY
+from molfun.modules.blocks.base import BLOCK_REGISTRY, BaseBlock, BlockOutput
 
 
 @BLOCK_REGISTRY.register("evoformer")
@@ -46,7 +43,7 @@ class EvoformerBlock(BaseBlock):
         n_heads_msa: int = 8,
         n_heads_pair: int = 4,
         dropout: float = 0.0,
-        attention_cls: Optional[str] = None,
+        attention_cls: str | None = None,
         **kwargs,
     ):
         super().__init__()
@@ -79,7 +76,9 @@ class EvoformerBlock(BaseBlock):
         # MSA transition
         self.msa_ff_norm = nn.LayerNorm(d_msa)
         self.msa_ff = nn.Sequential(
-            nn.Linear(d_msa, d_msa * 4), nn.GELU(), nn.Linear(d_msa * 4, d_msa),
+            nn.Linear(d_msa, d_msa * 4),
+            nn.GELU(),
+            nn.Linear(d_msa * 4, d_msa),
         )
 
         # Outer product mean: MSA → pair
@@ -98,14 +97,18 @@ class EvoformerBlock(BaseBlock):
         self.pair_row_k = nn.Linear(d_pair, d_pair, bias=False)
         self.pair_row_v = nn.Linear(d_pair, d_pair, bias=False)
         self.pair_row_out = nn.Linear(d_pair, d_pair)
-        self.pair_row_attn = attn_cls(num_heads=n_heads_pair, head_dim=head_dim_pair, dropout=dropout)
+        self.pair_row_attn = attn_cls(
+            num_heads=n_heads_pair, head_dim=head_dim_pair, dropout=dropout
+        )
         self.n_heads_pair = n_heads_pair
         self.head_dim_pair = head_dim_pair
 
         # Pair transition
         self.pair_ff_norm = nn.LayerNorm(d_pair)
         self.pair_ff = nn.Sequential(
-            nn.Linear(d_pair, d_pair * 4), nn.GELU(), nn.Linear(d_pair * 4, d_pair),
+            nn.Linear(d_pair, d_pair * 4),
+            nn.GELU(),
+            nn.Linear(d_pair * 4, d_pair),
         )
 
         self.drop = nn.Dropout(dropout)
@@ -113,9 +116,9 @@ class EvoformerBlock(BaseBlock):
     def forward(
         self,
         single: torch.Tensor,
-        pair: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
-        pair_mask: Optional[torch.Tensor] = None,
+        pair: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
+        pair_mask: torch.Tensor | None = None,
     ) -> BlockOutput:
         msa = single  # [B, N, L, D_msa]
         assert pair is not None, "EvoformerBlock requires pair representation"
@@ -149,8 +152,8 @@ class EvoformerBlock(BaseBlock):
 
         # ── Outer product mean ──
         m = self.opm_norm(msa)
-        left = self.opm_left(m)   # [B, N, L, 32]
-        right = self.opm_right(m) # [B, N, L, 32]
+        left = self.opm_left(m)  # [B, N, L, 32]
+        right = self.opm_right(m)  # [B, N, L, 32]
         opm = torch.einsum("bnid,bnjc->bijdc", left, right)  # [B, L, L, 32, 32]
         opm = opm.mean(dim=0) if B == 1 else opm  # average over batch if needed
         opm = opm.reshape(*opm.shape[:3], -1)  # [B, L, L, 32*32]
@@ -200,7 +203,9 @@ class _TriangularUpdate(nn.Module):
         self.out_gate = nn.Linear(d_pair, d_pair)
 
     def forward(
-        self, pair: torch.Tensor, mask: Optional[torch.Tensor] = None,
+        self,
+        pair: torch.Tensor,
+        mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         p = self.norm(pair)
 

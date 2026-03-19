@@ -17,13 +17,14 @@ Usage::
 
 from __future__ import annotations
 
+import contextlib
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import torch
 from torch.utils.data import DataLoader
 
-from molfun.benchmarks.metrics import MetricCollection, create_metrics
+from molfun.benchmarks.metrics import create_metrics
 from molfun.benchmarks.report import BenchmarkReport, TaskResult
 from molfun.benchmarks.suites import BenchmarkSuite, BenchmarkTask, TaskType
 
@@ -61,7 +62,7 @@ class ModelEvaluator:
         self._num_workers = num_workers
         self._max_seq_len = max_seq_len
 
-    def run(self, tracker: Optional[BaseTracker] = None) -> BenchmarkReport:
+    def run(self, tracker: BaseTracker | None = None) -> BenchmarkReport:
         """
         Execute all tasks and return a ``BenchmarkReport``.
 
@@ -95,7 +96,7 @@ class ModelEvaluator:
     # Extension points (Template Method)
     # ------------------------------------------------------------------
 
-    def _build_loader(self, task: BenchmarkTask) -> Optional[DataLoader]:
+    def _build_loader(self, task: BenchmarkTask) -> DataLoader | None:
         """
         Build a DataLoader for a benchmark task.
 
@@ -109,14 +110,15 @@ class ModelEvaluator:
         if not source.exists():
             return None
 
-        if task.task_type in (TaskType.REGRESSION, TaskType.CLASSIFICATION):
-            return self._loader_from_structures(source, task)
-        elif task.task_type == TaskType.STRUCTURE:
+        if (
+            task.task_type in (TaskType.REGRESSION, TaskType.CLASSIFICATION)
+            or task.task_type == TaskType.STRUCTURE
+        ):
             return self._loader_from_structures(source, task)
 
         return None
 
-    def _extract_predictions(self, result: dict, task: BenchmarkTask) -> Optional[torch.Tensor]:
+    def _extract_predictions(self, result: dict, task: BenchmarkTask) -> torch.Tensor | None:
         """
         Extract the relevant prediction tensor from model output.
 
@@ -138,7 +140,7 @@ class ModelEvaluator:
     def _evaluate_task(
         self,
         task: BenchmarkTask,
-        tracker: Optional[BaseTracker],
+        tracker: BaseTracker | None,
     ) -> TaskResult:
         """Run a single benchmark task."""
         metrics = create_metrics(list(task.metrics))
@@ -207,13 +209,11 @@ class ModelEvaluator:
             meta["gpu"] = torch.cuda.get_device_name(0)
             meta["gpu_memory_gb"] = round(torch.cuda.get_device_properties(0).total_mem / 1e9, 1)
         if hasattr(self._model, "summary"):
-            try:
+            with contextlib.suppress(Exception):
                 meta["model_summary"] = self._model.summary()
-            except Exception:
-                pass
         return meta
 
-    def _loader_from_structures(self, source, task: BenchmarkTask) -> Optional[DataLoader]:
+    def _loader_from_structures(self, source, task: BenchmarkTask) -> DataLoader | None:
         """Try to build a loader from a directory of PDB/CIF files or a CSV."""
         from pathlib import Path
 
@@ -227,9 +227,16 @@ class ModelEvaluator:
                 affinity = AffinitySource.from_csv(str(source))
                 pdb_paths = list(affinity.pdb_paths.values())
                 labels = affinity.labels
-                ds = StructureDataset(pdb_paths=pdb_paths, labels=labels, max_seq_len=self._max_seq_len)
-                return DataLoader(ds, batch_size=self._batch_size, shuffle=False,
-                                  num_workers=self._num_workers, collate_fn=collate_structure_batch)
+                ds = StructureDataset(
+                    pdb_paths=pdb_paths, labels=labels, max_seq_len=self._max_seq_len
+                )
+                return DataLoader(
+                    ds,
+                    batch_size=self._batch_size,
+                    shuffle=False,
+                    num_workers=self._num_workers,
+                    collate_fn=collate_structure_batch,
+                )
             except Exception:
                 return None
 
@@ -241,8 +248,13 @@ class ModelEvaluator:
                 from molfun.data.datasets.structure import StructureDataset, collate_structure_batch
 
                 ds = StructureDataset(pdb_paths=pdb_files, max_seq_len=self._max_seq_len)
-                return DataLoader(ds, batch_size=self._batch_size, shuffle=False,
-                                  num_workers=self._num_workers, collate_fn=collate_structure_batch)
+                return DataLoader(
+                    ds,
+                    batch_size=self._batch_size,
+                    shuffle=False,
+                    num_workers=self._num_workers,
+                    collate_fn=collate_structure_batch,
+                )
             except Exception:
                 return None
 
@@ -253,6 +265,7 @@ class ModelEvaluator:
         """Unpack batch into (features, targets, mask) triple."""
         try:
             from molfun.helpers.training import unpack_batch
+
             return unpack_batch(batch_data)
         except ImportError:
             if isinstance(batch_data, (list, tuple)) and len(batch_data) >= 2:

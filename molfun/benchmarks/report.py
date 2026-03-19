@@ -15,7 +15,6 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -50,7 +49,7 @@ class BenchmarkReport:
     # Access helpers
     # ------------------------------------------------------------------
 
-    def metric(self, task: str, metric_name: str) -> Optional[float]:
+    def metric(self, task: str, metric_name: str) -> float | None:
         """Get a single metric value.  Returns ``None`` if not found."""
         tr = self.results.get(task)
         if tr is None:
@@ -149,7 +148,7 @@ class BenchmarkReport:
             return "% No results"
 
         all_metric_names = _collect_metric_names(self.results)
-        n_cols = 1 + len(all_metric_names)
+        1 + len(all_metric_names)
         col_spec = "l" + "c" * len(all_metric_names)
 
         lines = [
@@ -172,7 +171,12 @@ class BenchmarkReport:
 
         rows = []
         for name, tr in self.results.items():
-            row = {"task": name, **tr.metrics, "n_samples": tr.n_samples, "duration_s": tr.duration_s}
+            row = {
+                "task": name,
+                **tr.metrics,
+                "n_samples": tr.n_samples,
+                "duration_s": tr.duration_s,
+            }
             rows.append(row)
         return pd.DataFrame(rows).set_index("task")
 
@@ -180,6 +184,7 @@ class BenchmarkReport:
 # ------------------------------------------------------------------
 # Leaderboard
 # ------------------------------------------------------------------
+
 
 class Leaderboard:
     """
@@ -213,7 +218,7 @@ class Leaderboard:
         entries.sort(key=lambda x: x[1], reverse=not ascending)
         return entries
 
-    def table(self, task: str, metrics: Optional[list[str]] = None) -> str:
+    def table(self, task: str, metrics: list[str] | None = None) -> str:
         """Markdown comparison table for a given task."""
         if not self._reports:
             return "*No reports*"
@@ -279,6 +284,7 @@ class Leaderboard:
 # ------------------------------------------------------------------
 # Internal
 # ------------------------------------------------------------------
+
 
 def _collect_metric_names(results: dict[str, TaskResult]) -> list[str]:
     """Deduplicated ordered list of all metric names across tasks."""

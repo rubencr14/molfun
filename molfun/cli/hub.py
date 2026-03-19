@@ -3,8 +3,9 @@ CLI commands for Hugging Face Hub push/pull.
 """
 
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -12,9 +13,11 @@ import typer
 def push(
     checkpoint: Annotated[Path, typer.Argument(help="Local checkpoint directory to push.")],
     repo: Annotated[str, typer.Option(help="HF Hub repo (e.g. user/model-name).")],
-    token: Annotated[Optional[str], typer.Option(envvar="HF_TOKEN", help="HF API token.")] = None,
+    token: Annotated[str | None, typer.Option(envvar="HF_TOKEN", help="HF API token.")] = None,
     private: Annotated[bool, typer.Option(help="Make repo private.")] = False,
-    dataset_name: Annotated[Optional[str], typer.Option(help="Training dataset name for model card.")] = None,
+    dataset_name: Annotated[
+        str | None, typer.Option(help="Training dataset name for model card.")
+    ] = None,
     message: Annotated[str, typer.Option(help="Commit message.")] = "Upload Molfun model",
 ):
     """Push a model checkpoint to Hugging Face Hub with auto-generated model card."""
@@ -35,6 +38,7 @@ def push(
     model_summary = {}
     if meta_path.exists():
         import torch
+
         meta = torch.load(meta_path, map_location="cpu", weights_only=True)
         model_summary = {"name": meta.get("name", "unknown"), "strategy": meta.get("strategy", {})}
 
@@ -51,8 +55,10 @@ def push(
 def pull(
     repo: Annotated[str, typer.Argument(help="HF Hub repo (e.g. user/model-name).")],
     output: Annotated[Path, typer.Option("-o", help="Local output directory.")] = Path("models/"),
-    token: Annotated[Optional[str], typer.Option(envvar="HF_TOKEN", help="HF API token.")] = None,
-    revision: Annotated[Optional[str], typer.Option(help="Git revision (branch, tag, commit).")] = None,
+    token: Annotated[str | None, typer.Option(envvar="HF_TOKEN", help="HF API token.")] = None,
+    revision: Annotated[
+        str | None, typer.Option(help="Git revision (branch, tag, commit).")
+    ] = None,
 ):
     """Download a model from Hugging Face Hub."""
     from molfun.tracking.hf_tracker import HuggingFaceTracker
@@ -76,7 +82,7 @@ def pull(
 def push_dataset(
     data_dir: Annotated[Path, typer.Argument(help="Directory with data files to upload.")],
     repo: Annotated[str, typer.Option(help="HF Hub dataset repo (e.g. user/dataset-name).")],
-    token: Annotated[Optional[str], typer.Option(envvar="HF_TOKEN", help="HF API token.")] = None,
+    token: Annotated[str | None, typer.Option(envvar="HF_TOKEN", help="HF API token.")] = None,
     private: Annotated[bool, typer.Option(help="Make repo private.")] = False,
     message: Annotated[str, typer.Option(help="Commit message.")] = "Upload Molfun dataset",
 ):
@@ -89,7 +95,10 @@ def push_dataset(
     typer.echo(f"Pushing {data_dir} → {repo} (dataset)...")
 
     tracker = HuggingFaceTracker(
-        repo_id=repo, token=token, private=private, repo_type="dataset",
+        repo_id=repo,
+        token=token,
+        private=private,
+        repo_type="dataset",
     )
     tracker.start_run(name=message)
     tracker.log_artifact(str(data_dir), name="data")

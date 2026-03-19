@@ -7,8 +7,8 @@ multiple backends at once via CompositeTracker).
 """
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Optional
 
 
 class BaseTracker(ABC):
@@ -28,15 +28,15 @@ class BaseTracker(ABC):
     @abstractmethod
     def start_run(
         self,
-        name: Optional[str] = None,
-        tags: Optional[list[str]] = None,
-        config: Optional[dict] = None,
+        name: str | None = None,
+        tags: list[str] | None = None,
+        config: dict | None = None,
     ) -> None:
         """Start a new tracked run/experiment."""
         ...
 
     @abstractmethod
-    def log_metrics(self, metrics: dict, step: Optional[int] = None) -> None:
+    def log_metrics(self, metrics: dict, step: int | None = None) -> None:
         """Log scalar metrics (loss, accuracy, etc.)."""
         ...
 
@@ -46,7 +46,7 @@ class BaseTracker(ABC):
         ...
 
     @abstractmethod
-    def log_artifact(self, path: str, name: Optional[str] = None) -> None:
+    def log_artifact(self, path: str, name: str | None = None) -> None:
         """Log a file artifact (checkpoint, plot, etc.)."""
         ...
 

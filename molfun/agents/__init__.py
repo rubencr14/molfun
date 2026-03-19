@@ -27,11 +27,11 @@ Supported LLM backends:
     - vLLM (local OpenAI-compatible server)
 """
 
-from molfun.agents.experiment import ExperimentConfig, Experiment
+from molfun.agents.base import AgentConfig, BaseAgent
+from molfun.agents.experiment import Experiment, ExperimentConfig
 from molfun.agents.memory import ExperimentMemory
-from molfun.agents.tools import MolfunTools
-from molfun.agents.base import BaseAgent, AgentConfig
 from molfun.agents.researcher import ResearchAgent
+from molfun.agents.tools import MolfunTools
 
 __all__ = [
     "ExperimentConfig",

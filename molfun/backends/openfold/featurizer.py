@@ -28,16 +28,15 @@ Usage:
 """
 
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Optional
+
 import numpy as np
 import torch
-
 
 # ======================================================================
 # Amino acid tables (mirrors OpenFold's residue_constants)
 # ======================================================================
-
 from molfun.constants import THREE_TO_ONE as _THREE_TO_ONE
 
 
@@ -75,12 +74,11 @@ class OpenFoldFeaturizer:
         self.num_extra_msa = num_extra_msa
 
         try:
-            from openfold.np import residue_constants as rc
             from openfold.data import data_transforms
+            from openfold.np import residue_constants as rc
         except ImportError:
             raise ImportError(
-                "OpenFold is required: "
-                "pip install git+https://github.com/aqlaboratory/openfold"
+                "OpenFold is required: pip install git+https://github.com/aqlaboratory/openfold"
             )
         self._rc = rc
         self._dt = data_transforms
@@ -92,7 +90,7 @@ class OpenFoldFeaturizer:
     def from_pdb(
         self,
         pdb_path: str | Path,
-        msa_path: Optional[str | Path] = None,
+        msa_path: str | Path | None = None,
         chain_id: str = "A",
     ) -> dict:
         """
@@ -134,9 +132,7 @@ class OpenFoldFeaturizer:
     # PDB parsing
     # ------------------------------------------------------------------
 
-    def _parse_pdb(
-        self, path: Path, chain_id: str
-    ) -> tuple[str, np.ndarray, np.ndarray]:
+    def _parse_pdb(self, path: Path, chain_id: str) -> tuple[str, np.ndarray, np.ndarray]:
         """
         Returns (sequence, atom_pos[L,37,3], atom_mask[L,37]).
         Uses BioPython for .cif; falls back to a minimal PDB reader.
@@ -146,6 +142,7 @@ class OpenFoldFeaturizer:
 
         try:
             from Bio.PDB import MMCIFParser, PDBParser
+
             if path.suffix.lower() == ".cif":
                 parser = MMCIFParser(QUIET=True)
             else:
@@ -156,7 +153,6 @@ class OpenFoldFeaturizer:
             return self._extract_minimal_pdb(path, chain_id, atom_order)
 
     def _extract_biopython(self, structure, chain_id, atom_order):
-        rc = self._rc
         model = structure[0]
         try:
             chain = model[chain_id]
@@ -205,8 +201,11 @@ class OpenFoldFeaturizer:
                     aa = _THREE_TO_ONE.get(resname)
                     if aa is None:
                         continue
-                    residues[key] = {"aa": aa, "pos": np.zeros((37, 3), np.float32),
-                                     "mask": np.zeros(37, np.float32)}
+                    residues[key] = {
+                        "aa": aa,
+                        "pos": np.zeros((37, 3), np.float32),
+                        "mask": np.zeros(37, np.float32),
+                    }
                     order.append(key)
                 idx = atom_order.get(atom_name)
                 if idx is not None:
@@ -240,6 +239,7 @@ class OpenFoldFeaturizer:
         aatype_t = torch.tensor(aatype, dtype=torch.long)
 
         import torch.nn.functional as F
+
         target_feat = F.one_hot(aatype_t.clamp(max=21), num_classes=22).float()
 
         protein = {
@@ -267,9 +267,7 @@ class OpenFoldFeaturizer:
     # MSA features
     # ------------------------------------------------------------------
 
-    def _build_msa_features(
-        self, seq: str, msa_path: Optional[Path], L: int
-    ) -> dict:
+    def _build_msa_features(self, seq: str, msa_path: Path | None, L: int) -> dict:
         """
         Build MSA-related tensors.
         Falls back to single-sequence (query only) if no MSA file given.

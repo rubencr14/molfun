@@ -43,41 +43,41 @@ Some Triton versions lack tl.tanh. This implementation uses tl.math.erf.
 If your Triton version does not expose tl.math.erf, switch it to tl.erf.
 """
 
-import torch                                   # PyTorch tensors and allocations
-import triton                                  # Triton runtime/JIT
-import triton.language as tl                   # Triton language primitives
+import torch  # PyTorch tensors and allocations
+import triton  # Triton runtime/JIT
+import triton.language as tl  # Triton language primitives
 
 
 # Autotune: try a few tilings and let Triton pick the fastest per (M,N,K) at runtime.
 # These configs are intentionally small and safe for a first iteration.
 @triton.autotune(
     configs=[
-        triton.Config({"BM": 64,  "BN": 64,  "BK": 32}, num_warps=4, num_stages=2),
-        triton.Config({"BM": 128, "BN": 64,  "BK": 32}, num_warps=4, num_stages=3),
-        triton.Config({"BM": 64,  "BN": 128, "BK": 32}, num_warps=4, num_stages=3),
+        triton.Config({"BM": 64, "BN": 64, "BK": 32}, num_warps=4, num_stages=2),
+        triton.Config({"BM": 128, "BN": 64, "BK": 32}, num_warps=4, num_stages=3),
+        triton.Config({"BM": 64, "BN": 128, "BK": 32}, num_warps=4, num_stages=3),
         triton.Config({"BM": 128, "BN": 128, "BK": 32}, num_warps=8, num_stages=3),
-        triton.Config({"BM": 64,  "BN": 64,  "BK": 64}, num_warps=4, num_stages=3),
+        triton.Config({"BM": 64, "BN": 64, "BK": 64}, num_warps=4, num_stages=3),
     ],
-    key=["M", "N", "K"],                       # autotune key based on problem sizes
+    key=["M", "N", "K"],  # autotune key based on problem sizes
 )
 @triton.jit
 def fused_linear_bias_gelu_kernel(
-    x_ptr,                                     # pointer to X data
-    w_ptr,                                     # pointer to W data (shape [N, K])
-    b_ptr,                                     # pointer to bias b (shape [N])
-    y_ptr,                                     # pointer to output Y
-    M: tl.constexpr,                           # number of rows in X (flattened tokens)
-    N: tl.constexpr,                           # output features
-    K: tl.constexpr,                           # input features
-    stride_xm: tl.constexpr,                   # stride for X along M dimension
-    stride_xk: tl.constexpr,                   # stride for X along K dimension
-    stride_wn: tl.constexpr,                   # stride for W along N dimension (rows)
-    stride_wk: tl.constexpr,                   # stride for W along K dimension (cols)
-    stride_ym: tl.constexpr,                   # stride for Y along M dimension
-    stride_yn: tl.constexpr,                   # stride for Y along N dimension
-    BM: tl.constexpr,                          # block size along M
-    BN: tl.constexpr,                          # block size along N
-    BK: tl.constexpr,                          # block size along K
+    x_ptr,  # pointer to X data
+    w_ptr,  # pointer to W data (shape [N, K])
+    b_ptr,  # pointer to bias b (shape [N])
+    y_ptr,  # pointer to output Y
+    M: tl.constexpr,  # number of rows in X (flattened tokens)
+    N: tl.constexpr,  # output features
+    K: tl.constexpr,  # input features
+    stride_xm: tl.constexpr,  # stride for X along M dimension
+    stride_xk: tl.constexpr,  # stride for X along K dimension
+    stride_wn: tl.constexpr,  # stride for W along N dimension (rows)
+    stride_wk: tl.constexpr,  # stride for W along K dimension (cols)
+    stride_ym: tl.constexpr,  # stride for Y along M dimension
+    stride_yn: tl.constexpr,  # stride for Y along N dimension
+    BM: tl.constexpr,  # block size along M
+    BN: tl.constexpr,  # block size along N
+    BK: tl.constexpr,  # block size along K
 ):
     # --- Program IDs (2D grid) -------------------------------------------------
     # pid_m selects which block of rows (M) we compute
@@ -163,7 +163,9 @@ def fused_linear_bias_gelu_kernel(
     )
 
 
-def fused_linear_gelu_triton(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor) -> torch.Tensor:
+def fused_linear_gelu_triton(
+    x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor
+) -> torch.Tensor:
     """
     Python wrapper that:
     - reshapes x to 2D [M,K]
@@ -193,14 +195,23 @@ def fused_linear_gelu_triton(x: torch.Tensor, weight: torch.Tensor, bias: torch.
 
     # Grid is 2D: one dimension for M blocks and one for N blocks
     # We pass a lambda so Triton can access the autotuned BM/BN values
-    grid = lambda META: (triton.cdiv(M, META["BM"]), triton.cdiv(N, META["BN"]))
+    def grid(META):
+        return (triton.cdiv(M, META["BM"]), triton.cdiv(N, META["BN"]))
 
     fused_linear_bias_gelu_kernel[grid](
-        x2, weight, bias, y2,
-        M=M, N=N, K=K,
-        stride_xm=x2.stride(0), stride_xk=x2.stride(1),
-        stride_wn=weight.stride(0), stride_wk=weight.stride(1),
-        stride_ym=y2.stride(0), stride_yn=y2.stride(1),
+        x2,
+        weight,
+        bias,
+        y2,
+        M=M,
+        N=N,
+        K=K,
+        stride_xm=x2.stride(0),
+        stride_xk=x2.stride(1),
+        stride_wn=weight.stride(0),
+        stride_wk=weight.stride(1),
+        stride_ym=y2.stride(0),
+        stride_yn=y2.stride(1),
     )
 
     # Reshape back: original leading dims + N
