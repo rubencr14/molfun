@@ -12,14 +12,16 @@ Usage
 """
 
 from __future__ import annotations
-from typing import Optional, TYPE_CHECKING
+
+from typing import TYPE_CHECKING
+
 import torch.nn as nn
 
 from molfun.backends.openfold.loss import OpenFoldLoss
 
 if TYPE_CHECKING:
-    import torch
     import ml_collections
+    import torch
 
 
 class StructureLossHead(nn.Module):
@@ -37,7 +39,7 @@ class StructureLossHead(nn.Module):
 
     def __init__(
         self,
-        loss_config: "ml_collections.ConfigDict",
+        loss_config: ml_collections.ConfigDict,
         disable_masked_msa: bool = True,
         disable_experimentally_resolved: bool = True,
     ):
@@ -53,7 +55,7 @@ class StructureLossHead(nn.Module):
     # ------------------------------------------------------------------
 
     @classmethod
-    def fape_only(cls, config) -> "StructureLossHead":
+    def fape_only(cls, config) -> StructureLossHead:
         """FAPE + supervised chi only."""
         head = cls.__new__(cls)
         nn.Module.__init__(head)
@@ -61,7 +63,7 @@ class StructureLossHead(nn.Module):
         return head
 
     @classmethod
-    def with_weights(cls, config, **weights) -> "StructureLossHead":
+    def with_weights(cls, config, **weights) -> StructureLossHead:
         """Override individual loss-term weights."""
         head = cls.__new__(cls)
         nn.Module.__init__(head)
@@ -75,9 +77,9 @@ class StructureLossHead(nn.Module):
     def forward(
         self,
         trunk_output,
-        mask: Optional["torch.Tensor"] = None,
-        batch: Optional[dict] = None,
-    ) -> "torch.Tensor":
+        mask: torch.Tensor | None = None,
+        batch: dict | None = None,
+    ) -> torch.Tensor:
         """
         Compute structure loss from trunk output + ground truth batch.
 
@@ -91,9 +93,7 @@ class StructureLossHead(nn.Module):
             Scalar loss tensor (differentiable).
         """
         if batch is None:
-            raise ValueError(
-                "StructureLossHead requires `batch` (ground-truth feature dict)."
-            )
+            raise ValueError("StructureLossHead requires `batch` (ground-truth feature dict).")
         raw_outputs = trunk_output.extra.get("_raw_outputs")
         if raw_outputs is None:
             raise RuntimeError(
@@ -105,10 +105,10 @@ class StructureLossHead(nn.Module):
 
     def loss(
         self,
-        preds: "torch.Tensor",
+        preds: torch.Tensor,
         targets=None,
         loss_fn: str = "openfold",
-    ) -> dict[str, "torch.Tensor"]:
+    ) -> dict[str, torch.Tensor]:
         """
         Compatibility wrapper for the training loop.
 

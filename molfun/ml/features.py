@@ -14,24 +14,44 @@ Usage::
 """
 
 from __future__ import annotations
-from typing import Optional
-import math
+
 import numpy as np
 
 from molfun.constants import (
-    STANDARD_AA as _STANDARD_AA_STR,
-    AA_TO_IDX,
-    MW as _MW,
-    WATER_LOSS as _WATER_LOSS,
-    HYDROPHOBICITY as _HYDROPHOBICITY,
     CHARGE_PH7 as _CHARGE_PH7,
-    PK_SIDE as _PK_SIDE,
-    PK_NH2 as _PK_NH2,
-    PK_COOH as _PK_COOH,
-    PK_ACIDIC as _PK_ACIDIC,
-    HELIX_PROPENSITY as _HELIX_PROPENSITY,
-    SHEET_PROPENSITY as _SHEET_PROPENSITY,
+)
+from molfun.constants import (
     COIL_PROPENSITY as _COIL_PROPENSITY,
+)
+from molfun.constants import (
+    HELIX_PROPENSITY as _HELIX_PROPENSITY,
+)
+from molfun.constants import (
+    HYDROPHOBICITY as _HYDROPHOBICITY,
+)
+from molfun.constants import (
+    MW as _MW,
+)
+from molfun.constants import (
+    PK_ACIDIC as _PK_ACIDIC,
+)
+from molfun.constants import (
+    PK_COOH as _PK_COOH,
+)
+from molfun.constants import (
+    PK_NH2 as _PK_NH2,
+)
+from molfun.constants import (
+    PK_SIDE as _PK_SIDE,
+)
+from molfun.constants import (
+    SHEET_PROPENSITY as _SHEET_PROPENSITY,
+)
+from molfun.constants import (
+    STANDARD_AA as _STANDARD_AA_STR,
+)
+from molfun.constants import (
+    WATER_LOSS as _WATER_LOSS,
 )
 
 _STANDARD_AA = _STANDARD_AA_STR
@@ -40,6 +60,7 @@ _STANDARD_AA = _STANDARD_AA_STR
 # ------------------------------------------------------------------
 # Individual feature extractors  (sequence → 1-D array)
 # ------------------------------------------------------------------
+
 
 def _aa_composition(seq: str) -> np.ndarray:
     """Frequency of each of the 20 standard amino acids."""
@@ -118,7 +139,7 @@ def _hydrophobicity_stats(seq: str) -> np.ndarray:
     std = arr.std()
     if len(arr) > 1 and std > 1e-8:
         centered = arr - mean
-        autocorr = np.dot(centered[:-1], centered[1:]) / (len(centered) - 1) / (std ** 2)
+        autocorr = np.dot(centered[:-1], centered[1:]) / (len(centered) - 1) / (std**2)
     else:
         autocorr = 0.0
     return np.array([mean, std, autocorr], dtype=np.float64)
@@ -183,32 +204,42 @@ def _tiny_small_aliphatic_aromatic_polar_charged(seq: str) -> np.ndarray:
 # ------------------------------------------------------------------
 
 _FEATURE_REGISTRY: dict[str, tuple] = {
-    "aa_composition":   (_aa_composition, 20, "Frequency of 20 standard amino acids"),
-    "dipeptide":        (_dipeptide_composition, 400, "Frequency of 400 dipeptide pairs"),
-    "length":           (_length, 1, "Sequence length"),
+    "aa_composition": (_aa_composition, 20, "Frequency of 20 standard amino acids"),
+    "dipeptide": (_dipeptide_composition, 400, "Frequency of 400 dipeptide pairs"),
+    "length": (_length, 1, "Sequence length"),
     "molecular_weight": (_molecular_weight, 1, "Estimated molecular weight (Da)"),
-    "charge_ph7":       (_charge_ph7, 1, "Net charge at pH 7"),
+    "charge_ph7": (_charge_ph7, 1, "Net charge at pH 7"),
     "isoelectric_point": (_isoelectric_point, 1, "Estimated isoelectric point"),
-    "hydrophobicity":   (_hydrophobicity_stats, 3, "Hydrophobicity mean, std, autocorrelation"),
-    "aromaticity":      (_aromaticity, 1, "Fraction of aromatic residues"),
-    "ss_propensity":    (_ss_propensity, 3, "Chou-Fasman helix/sheet/coil propensities"),
+    "hydrophobicity": (_hydrophobicity_stats, 3, "Hydrophobicity mean, std, autocorrelation"),
+    "aromaticity": (_aromaticity, 1, "Fraction of aromatic residues"),
+    "ss_propensity": (_ss_propensity, 3, "Chou-Fasman helix/sheet/coil propensities"),
     "sequence_entropy": (_sequence_entropy, 1, "Shannon entropy of AA distribution"),
-    "gravy":            (_gravy, 1, "GRAVY score"),
-    "aa_groups":        (_tiny_small_aliphatic_aromatic_polar_charged, 6, "Grouped AA fractions (6 groups)"),
+    "gravy": (_gravy, 1, "GRAVY score"),
+    "aa_groups": (
+        _tiny_small_aliphatic_aromatic_polar_charged,
+        6,
+        "Grouped AA fractions (6 groups)",
+    ),
 }
 
 AVAILABLE_FEATURES: list[str] = sorted(_FEATURE_REGISTRY.keys())
 
 DEFAULT_FEATURES: list[str] = [
-    "aa_composition", "length", "molecular_weight",
-    "charge_ph7", "hydrophobicity", "aromaticity",
-    "ss_propensity", "sequence_entropy",
+    "aa_composition",
+    "length",
+    "molecular_weight",
+    "charge_ph7",
+    "hydrophobicity",
+    "aromaticity",
+    "ss_propensity",
+    "sequence_entropy",
 ]
 
 
 # ------------------------------------------------------------------
 # ProteinFeaturizer (sklearn-compatible)
 # ------------------------------------------------------------------
+
 
 class ProteinFeaturizer:
     """
@@ -231,11 +262,12 @@ class ProteinFeaturizer:
     def __sklearn_tags__(self):
         try:
             from sklearn.utils._tags import Tags
+
             return Tags()
         except ImportError:
             return {}
 
-    def __init__(self, features: Optional[list[str]] = None):
+    def __init__(self, features: list[str] | None = None):
         self.features = features or list(DEFAULT_FEATURES)
         for f in self.features:
             if f not in _FEATURE_REGISTRY:

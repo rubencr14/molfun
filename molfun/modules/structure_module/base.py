@@ -10,9 +10,9 @@ which structure module variant is used.
 """
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -25,10 +25,11 @@ STRUCTURE_MODULE_REGISTRY = ModuleRegistry("structure_module")
 @dataclass
 class StructureModuleOutput:
     """Standardized output from any structure prediction module."""
-    positions: torch.Tensor                          # [B, L, 3] Cα or [B, L, n_atoms, 3]
-    frames: Optional[torch.Tensor] = None            # [B, L, 4, 4] backbone rigid frames
-    confidence: Optional[torch.Tensor] = None        # [B, L] per-residue confidence (pLDDT-like)
-    single_repr: Optional[torch.Tensor] = None       # [B, L, D] updated single repr
+
+    positions: torch.Tensor  # [B, L, 3] Cα or [B, L, n_atoms, 3]
+    frames: torch.Tensor | None = None  # [B, L, 4, 4] backbone rigid frames
+    confidence: torch.Tensor | None = None  # [B, L] per-residue confidence (pLDDT-like)
+    single_repr: torch.Tensor | None = None  # [B, L, D] updated single repr
     extra: dict = field(default_factory=dict)
 
 
@@ -50,8 +51,8 @@ class BaseStructureModule(ABC, nn.Module):
         self,
         single: torch.Tensor,
         pair: torch.Tensor,
-        aatype: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
+        aatype: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
         **kwargs,
     ) -> StructureModuleOutput:
         """

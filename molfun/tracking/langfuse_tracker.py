@@ -21,7 +21,7 @@ Usage::
 """
 
 from __future__ import annotations
-from typing import Optional
+
 import os
 
 from molfun.tracking.base import BaseTracker
@@ -38,9 +38,9 @@ class LangfuseTracker(BaseTracker):
 
     def __init__(
         self,
-        public_key: Optional[str] = None,
-        secret_key: Optional[str] = None,
-        host: Optional[str] = None,
+        public_key: str | None = None,
+        secret_key: str | None = None,
+        host: str | None = None,
     ):
         try:
             from langfuse import Langfuse
@@ -55,7 +55,7 @@ class LangfuseTracker(BaseTracker):
             host=host or os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"),
         )
         self._trace = None
-        self._run_name: Optional[str] = None
+        self._run_name: str | None = None
 
     def start_run(self, name=None, tags=None, config=None):
         self._run_name = name or "molfun-run"

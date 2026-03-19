@@ -5,7 +5,6 @@ Requires: pip install comet-ml
 """
 
 from __future__ import annotations
-from typing import Optional
 
 from molfun.tracking.base import BaseTracker
 
@@ -28,12 +27,13 @@ class CometTracker(BaseTracker):
     def __init__(
         self,
         project_name: str = "molfun",
-        workspace: Optional[str] = None,
-        api_key: Optional[str] = None,
+        workspace: str | None = None,
+        api_key: str | None = None,
         **comet_kwargs,
     ):
         try:
             import comet_ml
+
             self._comet_ml = comet_ml
         except ImportError:
             raise ImportError(

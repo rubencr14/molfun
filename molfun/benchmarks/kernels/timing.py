@@ -8,7 +8,7 @@ duplicated across every kernel benchmark script.
 from __future__ import annotations
 
 import time
-from typing import Callable
+from collections.abc import Callable
 
 import torch
 

@@ -5,7 +5,6 @@ Requires: pip install mlflow
 """
 
 from __future__ import annotations
-from typing import Optional
 
 from molfun.tracking.base import BaseTracker
 
@@ -28,10 +27,11 @@ class MLflowTracker(BaseTracker):
     def __init__(
         self,
         experiment_name: str = "molfun",
-        tracking_uri: Optional[str] = None,
+        tracking_uri: str | None = None,
     ):
         try:
             import mlflow
+
             self._mlflow = mlflow
         except ImportError:
             raise ImportError(
@@ -50,9 +50,7 @@ class MLflowTracker(BaseTracker):
                 tag_dict[t] = "true"
         self._run = self._mlflow.start_run(run_name=name, tags=tag_dict or None)
         if config:
-            self._mlflow.log_params(
-                {k: str(v)[:250] for k, v in config.items()}
-            )
+            self._mlflow.log_params({k: str(v)[:250] for k, v in config.items()})
 
     def log_metrics(self, metrics, step=None):
         if self._run is None:
@@ -63,9 +61,7 @@ class MLflowTracker(BaseTracker):
         if self._run is None:
             self.start_run(config=config)
         else:
-            self._mlflow.log_params(
-                {k: str(v)[:250] for k, v in config.items()}
-            )
+            self._mlflow.log_params({k: str(v)[:250] for k, v in config.items()})
 
     def log_artifact(self, path, name=None):
         if self._run is None:

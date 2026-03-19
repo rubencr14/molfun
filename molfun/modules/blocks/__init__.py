@@ -15,7 +15,7 @@ Registry
     block = BLOCK_REGISTRY.build("evoformer", d_msa=256, d_pair=128)
 """
 
-from molfun.modules.blocks.base import BaseBlock, BLOCK_REGISTRY
+from molfun.modules.blocks.base import BLOCK_REGISTRY, BaseBlock
 from molfun.modules.blocks.evoformer import EvoformerBlock
 from molfun.modules.blocks.pairformer import PairformerBlock
 from molfun.modules.blocks.simple_transformer import SimpleTransformerBlock

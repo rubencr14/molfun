@@ -31,14 +31,13 @@ Registering a custom loss
 ...         ...
 """
 
-from molfun.losses.base import LOSS_REGISTRY, LossFunction
+import molfun.backends.openfold.loss  # noqa: F401  registers openfold
 
 # Trigger registration of built-in losses by importing their modules.
-import molfun.losses.affinity   # noqa: F401  registers mse, mae, huber, pearson
-import molfun.backends.openfold.loss   # noqa: F401  registers openfold
-
-from molfun.losses.affinity import MSELoss, MAELoss, HuberLoss, PearsonLoss
+import molfun.losses.affinity  # noqa: F401  registers mse, mae, huber, pearson
 from molfun.backends.openfold.loss import OpenFoldLoss
+from molfun.losses.affinity import HuberLoss, MAELoss, MSELoss, PearsonLoss
+from molfun.losses.base import LOSS_REGISTRY, LossFunction
 
 __all__ = [
     # Registry + ABC

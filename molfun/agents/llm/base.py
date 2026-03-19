@@ -7,14 +7,15 @@ on Ollama, or a local model via LM Studio.
 """
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
 class ToolCall:
     """A single tool/function call requested by the LLM."""
+
     id: str
     name: str
     arguments: dict
@@ -23,7 +24,8 @@ class ToolCall:
 @dataclass
 class LLMResponse:
     """Normalized response from any LLM backend."""
-    text: Optional[str] = None
+
+    text: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: dict = field(default_factory=dict)
 
@@ -51,7 +53,7 @@ class BaseLLM(ABC):
     def chat(
         self,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
+        tools: list[dict] | None = None,
     ) -> LLMResponse:
         """
         Send messages + tool schemas, get back a response.

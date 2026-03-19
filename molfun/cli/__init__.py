@@ -25,15 +25,15 @@ Commands
 
 import typer
 
-from molfun.cli.finetune import structure, affinity
+from molfun.cli.agent import agent
+from molfun.cli.benchmark import benchmark
+from molfun.cli.eval import eval_model
+from molfun.cli.fetch import fetch_domain, fetch_msa, fetch_pdb
+from molfun.cli.finetune import affinity, structure
+from molfun.cli.hub import pull, push, push_dataset
 from molfun.cli.info import info
-from molfun.cli.fetch import fetch_pdb, fetch_msa, fetch_domain
 from molfun.cli.parse import parse
 from molfun.cli.registry import registry
-from molfun.cli.agent import agent
-from molfun.cli.eval import eval_model
-from molfun.cli.benchmark import benchmark
-from molfun.cli.hub import push, pull, push_dataset
 from molfun.cli.run import run
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)

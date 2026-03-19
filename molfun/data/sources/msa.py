@@ -8,18 +8,18 @@ Backends:
 """
 
 from __future__ import annotations
-from pathlib import Path
-from typing import Optional
+
 import json
 import time
-import urllib.request
 import urllib.error
+import urllib.request
+from pathlib import Path
 
 import torch
 
-from molfun.data.storage import open_path, exists, ensure_dir
 from molfun.data.parsers.a3m import A3MParser
 from molfun.data.parsers.residue import AA_TO_IDX as _AA_TO_IDX_NEW
+from molfun.data.storage import ensure_dir, exists, open_path
 
 _COLABFOLD_API = "https://api.colabfold.com"
 
@@ -47,12 +47,14 @@ class MSAProvider:
     def __init__(
         self,
         backend: str = "precomputed",
-        msa_dir: Optional[str] = None,
+        msa_dir: str | None = None,
         max_msa_depth: int = 512,
-        storage_options: Optional[dict] = None,
+        storage_options: dict | None = None,
     ):
         if backend not in ("precomputed", "colabfold", "single"):
-            raise ValueError(f"Unknown backend: {backend}. Use 'precomputed', 'colabfold', or 'single'.")
+            raise ValueError(
+                f"Unknown backend: {backend}. Use 'precomputed', 'colabfold', or 'single'."
+            )
         self.backend = backend
         self.msa_dir = str(msa_dir) if msa_dir else str(Path.home() / ".molfun" / "msa_cache")
         self.storage_options = storage_options
@@ -105,7 +107,8 @@ class MSAProvider:
         submit_url = f"{_COLABFOLD_API}/ticket/msa"
         data = json.dumps({"q": f">query\n{sequence}", "mode": "env"}).encode()
         req = urllib.request.Request(
-            submit_url, data=data,
+            submit_url,
+            data=data,
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
@@ -136,7 +139,8 @@ class MSAProvider:
             path = f"{self.msa_dir}/{pdb_id}{ext}"
             if exists(path, self.storage_options):
                 if ext.endswith(".gz"):
-                    import gzip, io
+                    import gzip
+
                     with open_path(path, "rb", self.storage_options) as f:
                         return gzip.decompress(f.read()).decode()
                 with open_path(path, "r", self.storage_options) as f:
@@ -163,17 +167,19 @@ class MSAProvider:
     def _cache_path(self, pdb_id: str) -> str:
         return f"{self.msa_dir}/{pdb_id}.msa.pt"
 
-    def _load_cached(self, pdb_id: str) -> Optional[dict]:
+    def _load_cached(self, pdb_id: str) -> dict | None:
         path = self._cache_path(pdb_id)
         if exists(path, self.storage_options):
             with open_path(path, "rb", self.storage_options) as f:
                 import io
+
                 buf = io.BytesIO(f.read())
                 return torch.load(buf, map_location="cpu", weights_only=True)
         return None
 
     def _save_cached(self, pdb_id: str, features: dict) -> None:
         import io
+
         buf = io.BytesIO()
         torch.save(features, buf)
         buf.seek(0)

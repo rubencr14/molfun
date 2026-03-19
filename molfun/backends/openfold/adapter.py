@@ -1,8 +1,9 @@
 """OpenFold (AlphaFold2) adapter for Molfun."""
 
 from __future__ import annotations
-from typing import Optional
+
 import re
+
 import torch
 import torch.nn as nn
 
@@ -26,9 +27,9 @@ class OpenFoldAdapter(BaseAdapter):
 
     def __init__(
         self,
-        model: Optional[nn.Module] = None,
-        config: Optional[object] = None,
-        weights_path: Optional[str] = None,
+        model: nn.Module | None = None,
+        config: object | None = None,
+        weights_path: str | None = None,
         device: str = "cuda",
     ):
         """
@@ -51,7 +52,7 @@ class OpenFoldAdapter(BaseAdapter):
         self.model.to(device)
 
     @staticmethod
-    def _build_from_config(config, weights_path: Optional[str] = None) -> nn.Module:
+    def _build_from_config(config, weights_path: str | None = None) -> nn.Module:
         try:
             from openfold.model.model import AlphaFold
         except ImportError:
@@ -91,6 +92,7 @@ class OpenFoldAdapter(BaseAdapter):
         elif "sm" in outputs and "plddt" not in outputs:
             try:
                 from openfold.utils.loss import compute_plddt
+
                 confidence = compute_plddt(outputs["sm"]["single"])
             except (ImportError, KeyError):
                 pass
@@ -239,13 +241,16 @@ def _remap_openfold_keys(state: dict, model: nn.Module) -> dict:
             continue
 
         new_k = k
-        new_k = re.sub(r"(blocks\.\d+)\.core\.(pair_transition|tri_mul_|tri_att_)",
-                        r"\1.pair_stack.\2", new_k)
+        new_k = re.sub(
+            r"(blocks\.\d+)\.core\.(pair_transition|tri_mul_|tri_att_)", r"\1.pair_stack.\2", new_k
+        )
         new_k = re.sub(r"(blocks\.\d+)\.core\.", r"\1.", new_k)
-        new_k = re.sub(r"(ipa\.linear_\w+_points)\.(weight|bias)",
-                        r"\1.linear.\2", new_k)
-        new_k = re.sub(r"^(template_(?:pair_embedder|pair_stack|angle_embedder|pointwise_att))",
-                        r"template_embedder.\1", new_k)
+        new_k = re.sub(r"(ipa\.linear_\w+_points)\.(weight|bias)", r"\1.linear.\2", new_k)
+        new_k = re.sub(
+            r"^(template_(?:pair_embedder|pair_stack|angle_embedder|pointwise_att))",
+            r"template_embedder.\1",
+            new_k,
+        )
 
         fixed[new_k] = v
 

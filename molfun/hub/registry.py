@@ -13,24 +13,21 @@ Usage::
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
+
 import hashlib
 import logging
 import shutil
 import sys
-import urllib.request
 import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 _WEIGHTS_DIR = Path.home() / ".molfun" / "weights"
 
-_OPENFOLD_WEIGHTS_URL = (
-    "https://huggingface.co/nz/OpenFold/resolve/main/"
-    "finetuning_ptm_2.pt"
-)
+_OPENFOLD_WEIGHTS_URL = "https://huggingface.co/nz/OpenFold/resolve/main/finetuning_ptm_2.pt"
 
 _OPENFOLD_CONFIG_PRESET = "finetuning_ptm"
 
@@ -38,6 +35,7 @@ _OPENFOLD_CONFIG_PRESET = "finetuning_ptm"
 @dataclass
 class PretrainedSpec:
     """Specification for a pretrained model."""
+
     name: str
     backend: str
     description: str
@@ -45,8 +43,8 @@ class PretrainedSpec:
     weights_filename: str
     config_preset: str
     config_kwargs: dict = field(default_factory=dict)
-    sha256: Optional[str] = None
-    size_mb: Optional[int] = None
+    sha256: str | None = None
+    size_mb: int | None = None
 
 
 PRETRAINED_REGISTRY: dict[str, PretrainedSpec] = {}
@@ -56,25 +54,29 @@ def _register(spec: PretrainedSpec) -> None:
     PRETRAINED_REGISTRY[spec.name] = spec
 
 
-_register(PretrainedSpec(
-    name="openfold",
-    backend="openfold",
-    description="OpenFold AlphaFold2 (finetuning_ptm preset, full weights)",
-    weights_url=_OPENFOLD_WEIGHTS_URL,
-    weights_filename="finetuning_ptm_2.pt",
-    config_preset=_OPENFOLD_CONFIG_PRESET,
-    size_mb=700,
-))
+_register(
+    PretrainedSpec(
+        name="openfold",
+        backend="openfold",
+        description="OpenFold AlphaFold2 (finetuning_ptm preset, full weights)",
+        weights_url=_OPENFOLD_WEIGHTS_URL,
+        weights_filename="finetuning_ptm_2.pt",
+        config_preset=_OPENFOLD_CONFIG_PRESET,
+        size_mb=700,
+    )
+)
 
-_register(PretrainedSpec(
-    name="openfold_ptm",
-    backend="openfold",
-    description="OpenFold AlphaFold2 with pTM head (finetuning_ptm preset)",
-    weights_url=_OPENFOLD_WEIGHTS_URL,
-    weights_filename="finetuning_ptm_2.pt",
-    config_preset=_OPENFOLD_CONFIG_PRESET,
-    size_mb=700,
-))
+_register(
+    PretrainedSpec(
+        name="openfold_ptm",
+        backend="openfold",
+        description="OpenFold AlphaFold2 with pTM head (finetuning_ptm preset)",
+        weights_url=_OPENFOLD_WEIGHTS_URL,
+        weights_filename="finetuning_ptm_2.pt",
+        config_preset=_OPENFOLD_CONFIG_PRESET,
+        size_mb=700,
+    )
+)
 
 
 def list_pretrained() -> list[PretrainedSpec]:
@@ -85,7 +87,7 @@ def list_pretrained() -> list[PretrainedSpec]:
 def download_weights(
     name: str,
     force: bool = False,
-    cache_dir: Optional[str] = None,
+    cache_dir: str | None = None,
     progress: bool = True,
 ) -> Path:
     """
@@ -143,15 +145,14 @@ def get_config(name: str):
     if spec.backend == "openfold":
         return _get_openfold_config(spec.config_preset, **spec.config_kwargs)
     else:
-        raise ValueError(
-            f"Config builder not implemented for backend '{spec.backend}'"
-        )
+        raise ValueError(f"Config builder not implemented for backend '{spec.backend}'")
 
 
 def _get_openfold_config(preset: str, **kwargs):
     """Build OpenFold config from a preset name."""
     try:
         from openfold.config import model_config
+
         cfg = model_config(preset)
         for k, v in kwargs.items():
             setattr(cfg, k, v)
@@ -188,9 +189,7 @@ def _download_file(url: str, dest: Path, progress: bool = True) -> None:
                         bar = "█" * filled + "░" * (bar_len - filled)
                         mb = downloaded / (1024 * 1024)
                         total_mb = total / (1024 * 1024)
-                        sys.stderr.write(
-                            f"\r  [{bar}] {pct:.0f}% ({mb:.0f}/{total_mb:.0f} MB)"
-                        )
+                        sys.stderr.write(f"\r  [{bar}] {pct:.0f}% ({mb:.0f}/{total_mb:.0f} MB)")
                         sys.stderr.flush()
 
             if progress and total > 0:
@@ -212,6 +211,5 @@ def _verify_sha256(path: Path, expected: str) -> None:
     if actual != expected:
         path.unlink(missing_ok=True)
         raise RuntimeError(
-            f"SHA-256 mismatch for {path.name}: "
-            f"expected {expected[:12]}..., got {actual[:12]}..."
+            f"SHA-256 mismatch for {path.name}: expected {expected[:12]}..., got {actual[:12]}..."
         )

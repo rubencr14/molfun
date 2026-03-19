@@ -10,14 +10,13 @@ and significantly better throughput on long sequences.
 """
 
 from __future__ import annotations
-from typing import Optional
+
 import math
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
-from molfun.modules.attention.base import BaseAttention, ATTENTION_REGISTRY
+from molfun.modules.attention.base import ATTENTION_REGISTRY, BaseAttention
 
 
 @ATTENTION_REGISTRY.register("flash")
@@ -46,8 +45,8 @@ class FlashAttention(BaseAttention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        bias: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
+        bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
         # F.scaled_dot_product_attention expects [B, H, L, D]
         # and accepts an additive attn_mask (float) not a boolean mask.
@@ -57,14 +56,17 @@ class FlashAttention(BaseAttention):
         elif bias is not None:
             attn_mask = bias
         elif mask is not None:
-            attn_mask = torch.zeros_like(q[:, :, :, :1].expand_as(
-                torch.empty(q.shape[0], q.shape[1], q.shape[2], k.shape[2],
-                            device=q.device)
-            ))
+            attn_mask = torch.zeros_like(
+                q[:, :, :, :1].expand_as(
+                    torch.empty(q.shape[0], q.shape[1], q.shape[2], k.shape[2], device=q.device)
+                )
+            )
             attn_mask = attn_mask.masked_fill(~mask, float("-inf"))
 
         return F.scaled_dot_product_attention(
-            q, k, v,
+            q,
+            k,
+            v,
             attn_mask=attn_mask,
             dropout_p=self._dropout_p if self.training else 0.0,
             scale=1.0 / math.sqrt(self._head_dim),
@@ -79,7 +81,7 @@ class FlashAttention(BaseAttention):
         return self._head_dim
 
     @classmethod
-    def from_standard(cls, standard_attn: BaseAttention) -> "FlashAttention":
+    def from_standard(cls, standard_attn: BaseAttention) -> FlashAttention:
         """Convert any BaseAttention to FlashAttention, preserving dimensions."""
         return cls(
             num_heads=standard_attn.num_heads,

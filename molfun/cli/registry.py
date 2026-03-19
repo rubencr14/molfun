@@ -3,8 +3,9 @@ CLI command for listing registered modules and components.
 """
 
 from __future__ import annotations
-from typing import Annotated, Optional
+
 from enum import Enum
+from typing import Annotated
 
 import typer
 
@@ -49,9 +50,11 @@ def _gather_sections(category: RegistryType) -> dict:
     if category in (RegistryType.all, RegistryType.attention):
         try:
             from molfun.modules import ATTENTION_REGISTRY
+
             sections["Attention mechanisms"] = {
                 name: ATTENTION_REGISTRY.get(name).__doc__.split("\n")[0].strip()
-                if ATTENTION_REGISTRY.get(name).__doc__ else ""
+                if ATTENTION_REGISTRY.get(name).__doc__
+                else ""
                 for name in ATTENTION_REGISTRY.list()
             }
         except Exception:
@@ -60,9 +63,11 @@ def _gather_sections(category: RegistryType) -> dict:
     if category in (RegistryType.all, RegistryType.blocks):
         try:
             from molfun.modules import BLOCK_REGISTRY
+
             sections["Trunk blocks"] = {
                 name: BLOCK_REGISTRY.get(name).__doc__.split("\n")[0].strip()
-                if BLOCK_REGISTRY.get(name).__doc__ else ""
+                if BLOCK_REGISTRY.get(name).__doc__
+                else ""
                 for name in BLOCK_REGISTRY.list()
             }
         except Exception:
@@ -71,9 +76,11 @@ def _gather_sections(category: RegistryType) -> dict:
     if category in (RegistryType.all, RegistryType.structure):
         try:
             from molfun.modules import STRUCTURE_MODULE_REGISTRY
+
             sections["Structure modules"] = {
                 name: STRUCTURE_MODULE_REGISTRY.get(name).__doc__.split("\n")[0].strip()
-                if STRUCTURE_MODULE_REGISTRY.get(name).__doc__ else ""
+                if STRUCTURE_MODULE_REGISTRY.get(name).__doc__
+                else ""
                 for name in STRUCTURE_MODULE_REGISTRY.list()
             }
         except Exception:
@@ -82,9 +89,11 @@ def _gather_sections(category: RegistryType) -> dict:
     if category in (RegistryType.all, RegistryType.embedders):
         try:
             from molfun.modules import EMBEDDER_REGISTRY
+
             sections["Embedders"] = {
                 name: EMBEDDER_REGISTRY.get(name).__doc__.split("\n")[0].strip()
-                if EMBEDDER_REGISTRY.get(name).__doc__ else ""
+                if EMBEDDER_REGISTRY.get(name).__doc__
+                else ""
                 for name in EMBEDDER_REGISTRY.list()
             }
         except Exception:
@@ -101,6 +110,7 @@ def _gather_sections(category: RegistryType) -> dict:
     if category in (RegistryType.all, RegistryType.heads):
         try:
             from molfun.models.structure import HEAD_REGISTRY
+
             sections["Prediction heads"] = list(HEAD_REGISTRY.keys())
         except Exception:
             sections["Prediction heads"] = ["affinity", "structure"]
@@ -108,12 +118,14 @@ def _gather_sections(category: RegistryType) -> dict:
     if category in (RegistryType.all, RegistryType.losses):
         try:
             from molfun.losses import LOSS_REGISTRY
+
             sections["Loss functions"] = list(LOSS_REGISTRY.keys())
         except Exception:
             sections["Loss functions"] = ["(not available)"]
 
     if category in (RegistryType.all, RegistryType.parsers):
         from molfun.data.parsers import PARSER_REGISTRY
+
         sections["File parsers"] = {
             ext: cls.__name__ for ext, cls in sorted(PARSER_REGISTRY.items())
         }

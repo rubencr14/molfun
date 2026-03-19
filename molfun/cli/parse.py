@@ -3,25 +3,30 @@ CLI command for inspecting and validating biological data files.
 """
 
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
 
 def parse(
-    paths: Annotated[list[Path], typer.Argument(help="Files to parse (PDB, CIF, SDF, MOL2, A3M, FASTA).")],
+    paths: Annotated[
+        list[Path], typer.Argument(help="Files to parse (PDB, CIF, SDF, MOL2, A3M, FASTA).")
+    ],
     json_output: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
-    max_seq_len: Annotated[int, typer.Option(help="Max sequence length for structure parsers.")] = 9999,
+    max_seq_len: Annotated[
+        int, typer.Option(help="Max sequence length for structure parsers.")
+    ] = 9999,
 ):
     """Parse and inspect biological data files (structures, ligands, alignments)."""
     import json
 
     from molfun.data.parsers import auto_parser
     from molfun.data.parsers.base import (
-        BaseStructureParser,
-        BaseLigandParser,
         BaseAlignmentParser,
+        BaseLigandParser,
+        BaseStructureParser,
     )
 
     results = []
@@ -77,13 +82,15 @@ def _structure_info(path: Path, parsed) -> dict:
 def _ligand_info(path: Path, molecules: list) -> dict:
     mols_info = []
     for mol in molecules[:20]:
-        mols_info.append({
-            "name": mol.name,
-            "atoms": mol.num_atoms,
-            "bonds": mol.num_bonds,
-            "elements": sorted(set(mol.elements)),
-            "properties": list(mol.properties.keys())[:5] if mol.properties else [],
-        })
+        mols_info.append(
+            {
+                "name": mol.name,
+                "atoms": mol.num_atoms,
+                "bonds": mol.num_bonds,
+                "elements": sorted(set(mol.elements)),
+                "properties": list(mol.properties.keys())[:5] if mol.properties else [],
+            }
+        )
     return {
         "file": str(path),
         "type": "ligand",

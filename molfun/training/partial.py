@@ -7,8 +7,6 @@ to adapt without the instability of unfreezing everything.
 """
 
 from __future__ import annotations
-from typing import Optional
-import torch.nn as nn
 
 from molfun.training.base import FinetuneStrategy
 
@@ -39,8 +37,8 @@ class PartialFinetune(FinetuneStrategy):
         self,
         unfreeze_last_n: int = 4,
         unfreeze_structure_module: bool = False,
-        lr_trunk: Optional[float] = None,
-        lr_head: Optional[float] = None,
+        lr_trunk: float | None = None,
+        lr_head: float | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -69,9 +67,7 @@ class PartialFinetune(FinetuneStrategy):
         if model.head is None:
             raise RuntimeError("No head attached to model.")
 
-        trunk_params = [
-            p for p in model.adapter.parameters() if p.requires_grad
-        ]
+        trunk_params = [p for p in model.adapter.parameters() if p.requires_grad]
         head_params = list(model.head.parameters())
 
         groups = []
@@ -81,17 +77,18 @@ class PartialFinetune(FinetuneStrategy):
             groups.append({"params": head_params, "lr": self.lr_head})
         if not groups:
             raise RuntimeError(
-                "No trainable parameters found. "
-                "Increase unfreeze_last_n or use FullFinetune."
+                "No trainable parameters found. Increase unfreeze_last_n or use FullFinetune."
             )
         return groups
 
     def describe(self) -> dict:
         d = super().describe()
-        d.update({
-            "unfreeze_last_n": self.unfreeze_last_n,
-            "unfreeze_structure_module": self.unfreeze_structure_module,
-            "lr_trunk": self.lr_trunk,
-            "lr_head": self.lr_head,
-        })
+        d.update(
+            {
+                "unfreeze_last_n": self.unfreeze_last_n,
+                "unfreeze_structure_module": self.unfreeze_structure_module,
+                "lr_trunk": self.lr_trunk,
+                "lr_head": self.lr_head,
+            }
+        )
         return d

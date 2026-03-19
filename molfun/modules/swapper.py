@@ -31,8 +31,9 @@ Usage
 """
 
 from __future__ import annotations
-from typing import Callable, Optional
+
 import re
+from collections.abc import Callable
 
 import torch.nn as nn
 
@@ -134,10 +135,7 @@ class ModuleSwapper:
         Returns:
             Number of modules swapped.
         """
-        targets = [
-            (name, mod) for name, mod in model.named_modules()
-            if isinstance(mod, old_type)
-        ]
+        targets = [(name, mod) for name, mod in model.named_modules() if isinstance(mod, old_type)]
 
         count = 0
         for name, old_mod in targets:
@@ -150,8 +148,8 @@ class ModuleSwapper:
     @staticmethod
     def discover(
         model: nn.Module,
-        pattern: Optional[str] = None,
-        module_type: Optional[type] = None,
+        pattern: str | None = None,
+        module_type: type | None = None,
     ) -> list[tuple[str, nn.Module]]:
         """
         List modules in the model, optionally filtered by name pattern or type.
@@ -174,7 +172,7 @@ class ModuleSwapper:
         return results
 
     @staticmethod
-    def summary(model: nn.Module, pattern: Optional[str] = None) -> str:
+    def summary(model: nn.Module, pattern: str | None = None) -> str:
         """
         Human-readable summary of swappable modules.
 
@@ -185,7 +183,9 @@ class ModuleSwapper:
             n_params = sum(p.numel() for p in mod.parameters(recurse=False))
             trainable = sum(p.numel() for p in mod.parameters(recurse=False) if p.requires_grad)
             cls_name = type(mod).__name__
-            lines.append(f"  {name:60s} {cls_name:30s} params={n_params:>8,} trainable={trainable:>8,}")
+            lines.append(
+                f"  {name:60s} {cls_name:30s} params={n_params:>8,} trainable={trainable:>8,}"
+            )
         header = f"Modules in {type(model).__name__}"
         if pattern:
             header += f" matching '{pattern}'"
@@ -193,6 +193,7 @@ class ModuleSwapper:
 
 
 # ── Internal helpers ──────────────────────────────────────────────────
+
 
 def _get_child(module: nn.Module, name: str) -> nn.Module:
     """Get a child by name, supporting both attributes and ModuleList indices."""

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -23,15 +23,25 @@ class BenchCategory(str, Enum):
 
 
 def benchmark(
-    category: Annotated[BenchCategory, typer.Argument(help="Benchmark category.")] = BenchCategory.kernels,
-    target: Annotated[str, typer.Option(help="Specific target (e.g. rmsd, contacts, all).")] = "all",
-    sizes: Annotated[str, typer.Option(help="Comma-separated sizes for kernel benchmarks.")] = "256,512,1024,2048",
+    category: Annotated[
+        BenchCategory, typer.Argument(help="Benchmark category.")
+    ] = BenchCategory.kernels,
+    target: Annotated[
+        str, typer.Option(help="Specific target (e.g. rmsd, contacts, all).")
+    ] = "all",
+    sizes: Annotated[
+        str, typer.Option(help="Comma-separated sizes for kernel benchmarks.")
+    ] = "256,512,1024,2048",
     device: Annotated[str, typer.Option(help="Device: cuda, cpu, mps.")] = "cuda",
     warmup: Annotated[int, typer.Option(help="Warmup iterations.")] = 5,
     repeats: Annotated[int, typer.Option(help="Repetitions.")] = 20,
-    checkpoint: Annotated[Optional[Path], typer.Option(help="Model checkpoint for model/inference benchmarks.")] = None,
-    suite: Annotated[str, typer.Option(help="Benchmark suite name (pdbbind, atom3d_lba, flip, structure).")] = "pdbbind",
-    data_dir: Annotated[Optional[Path], typer.Option(help="Data directory for evaluation.")] = None,
+    checkpoint: Annotated[
+        Path | None, typer.Option(help="Model checkpoint for model/inference benchmarks.")
+    ] = None,
+    suite: Annotated[
+        str, typer.Option(help="Benchmark suite name (pdbbind, atom3d_lba, flip, structure).")
+    ] = "pdbbind",
+    data_dir: Annotated[Path | None, typer.Option(help="Data directory for evaluation.")] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
 ):
     """Run benchmarks: kernels, model evaluation, inference, training, or data pipeline."""
@@ -85,8 +95,9 @@ def _run_kernel_benchmarks(target: str, sizes: str, device: str, warmup: int, re
 
 def _bench_rmsd(sizes, device, warmup, repeats):
     import torch
+
+    from molfun.benchmarks.kernels.timing import time_it_cpu, time_it_cuda
     from molfun.kernels.analysis.rmsd import rmsd_triton
-    from molfun.benchmarks.kernels.timing import time_it_cuda, time_it_cpu
 
     for N in sizes:
         a = torch.randn(1, N, 3, device=device)
@@ -98,8 +109,9 @@ def _bench_rmsd(sizes, device, warmup, repeats):
 
 def _bench_contacts(sizes, device, warmup, repeats):
     import torch
+
+    from molfun.benchmarks.kernels.timing import time_it_cpu, time_it_cuda
     from molfun.kernels.analysis.contact_map import contact_map_triton
-    from molfun.benchmarks.kernels.timing import time_it_cuda, time_it_cpu
 
     for N in sizes:
         coords = torch.randn(1, N, 3, device=device)
@@ -110,8 +122,9 @@ def _bench_contacts(sizes, device, warmup, repeats):
 
 def _bench_pairwise(sizes, device, warmup, repeats):
     import torch
+
+    from molfun.benchmarks.kernels.timing import time_it_cpu, time_it_cuda
     from molfun.kernels.analysis.pairwise_distance import pairwise_distance_triton
-    from molfun.benchmarks.kernels.timing import time_it_cuda, time_it_cpu
 
     for N in sizes:
         coords = torch.randn(1, N, 3, device=device)
@@ -122,8 +135,9 @@ def _bench_pairwise(sizes, device, warmup, repeats):
 
 def _bench_gelu(sizes, device, warmup, repeats):
     import torch
+
+    from molfun.benchmarks.kernels.timing import time_it_cpu, time_it_cuda
     from molfun.kernels.models.gelu_kernel import gelu_triton
-    from molfun.benchmarks.kernels.timing import time_it_cuda, time_it_cpu
 
     for D in sizes:
         x = torch.randn(32, D, device=device)
@@ -134,8 +148,9 @@ def _bench_gelu(sizes, device, warmup, repeats):
 
 def _bench_fused(sizes, device, warmup, repeats):
     import torch
+
+    from molfun.benchmarks.kernels.timing import time_it_cpu, time_it_cuda
     from molfun.kernels.models.fused_linear_gelu import fused_linear_gelu
-    from molfun.benchmarks.kernels.timing import time_it_cuda, time_it_cpu
 
     for D in sizes:
         x = torch.randn(32, D, device=device)
@@ -159,15 +174,15 @@ _KERNEL_FNS = {
 # Model evaluation benchmark
 # ------------------------------------------------------------------
 
+
 def _run_model_benchmark(checkpoint, suite_name, data_dir, device, json_output):
-    import json
 
     if checkpoint is None:
         typer.echo("Error: --checkpoint is required for model benchmarks.")
         raise typer.Exit(1)
 
+    from molfun.benchmarks import BenchmarkSuite, ModelEvaluator
     from molfun.models.structure import MolfunStructureModel
-    from molfun.benchmarks import ModelEvaluator, BenchmarkSuite
 
     typer.echo(f"Loading model from {checkpoint}...")
     model = MolfunStructureModel.load(str(checkpoint), device=device)
@@ -205,6 +220,7 @@ def _run_model_benchmark(checkpoint, suite_name, data_dir, device, json_output):
 # Inference benchmark
 # ------------------------------------------------------------------
 
+
 def _run_inference_benchmark(checkpoint, device, sizes, warmup, repeats, json_output):
     import json
 
@@ -212,8 +228,8 @@ def _run_inference_benchmark(checkpoint, device, sizes, warmup, repeats, json_ou
         typer.echo("Error: --checkpoint is required for inference benchmarks.")
         raise typer.Exit(1)
 
-    from molfun.models.structure import MolfunStructureModel
     from molfun.benchmarks.inference import InferenceBenchmark
+    from molfun.models.structure import MolfunStructureModel
 
     model = MolfunStructureModel.load(str(checkpoint), device=device)
     seq_lengths = [int(s.strip()) for s in sizes.split(",")]
@@ -230,6 +246,7 @@ def _run_inference_benchmark(checkpoint, device, sizes, warmup, repeats, json_ou
 # ------------------------------------------------------------------
 # Data pipeline benchmark
 # ------------------------------------------------------------------
+
 
 def _run_data_benchmark(data_dir, repeats, json_output):
     import json

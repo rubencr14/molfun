@@ -1,6 +1,7 @@
+from typing import Any
+
 import torch
 import torch.nn.functional as F
-from typing import List, Dict, Any
 
 from molfun.kernels.models.fused_linear_gelu_triton import fused_linear_gelu_triton
 
@@ -24,7 +25,7 @@ def time_it_cuda(fn, iters=200, warmup=50):
     return ms / iters
 
 
-def run_benchmark() -> List[Dict[str, Any]]:
+def run_benchmark() -> list[dict[str, Any]]:
     """Ejecuta el benchmark y devuelve resultados estructurados"""
     torch.set_grad_enabled(False)
     assert torch.cuda.is_available()
@@ -76,23 +77,18 @@ def run_benchmark() -> List[Dict[str, Any]]:
 
         speedup = t_base / t_tri if t_tri > 0 else float("inf")
 
-        results.append({
-            "benchmark_name": "fused_linear_gelu",
-            "case_name": f"B={B}_T={T}_K={K}_N={N}",
-            "baseline_time_ms": round(t_base, 4),
-            "triton_time_ms": round(t_tri, 4),
-            "speedup": round(speedup, 2) if speedup != float("inf") else None,
-            "max_diff": max_abs,
-            "mean_diff": mean_abs,
-            "metadata": {
-                "B": B,
-                "T": T,
-                "K": K,
-                "N": N,
-                "M": B * T,
-                "dtype": "float16"
+        results.append(
+            {
+                "benchmark_name": "fused_linear_gelu",
+                "case_name": f"B={B}_T={T}_K={K}_N={N}",
+                "baseline_time_ms": round(t_base, 4),
+                "triton_time_ms": round(t_tri, 4),
+                "speedup": round(speedup, 2) if speedup != float("inf") else None,
+                "max_diff": max_abs,
+                "mean_diff": mean_abs,
+                "metadata": {"B": B, "T": T, "K": K, "N": N, "M": B * T, "dtype": "float16"},
             }
-        })
+        )
 
     return results
 
@@ -104,8 +100,14 @@ def main():
         print(f"\nB={meta['B']} T={meta['T']} K={meta['K']} N={meta['N']} (M={meta['M']})")
         print(f"  baseline (linear+gelu): {result['baseline_time_ms']:.4f} ms")
         print(f"  triton fused:           {result['triton_time_ms']:.4f} ms")
-        print(f"  speedup:                {result['speedup']:.2f}x" if result['speedup'] else "  speedup:                inf")
-        print(f"  max|diff|:              {result['max_diff']:.3e}  mean|diff|: {result['mean_diff']:.3e}")
+        print(
+            f"  speedup:                {result['speedup']:.2f}x"
+            if result["speedup"]
+            else "  speedup:                inf"
+        )
+        print(
+            f"  max|diff|:              {result['max_diff']:.3e}  mean|diff|: {result['mean_diff']:.3e}"
+        )
 
 
 if __name__ == "__main__":

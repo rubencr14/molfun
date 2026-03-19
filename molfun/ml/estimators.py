@@ -19,34 +19,40 @@ Usage::
 """
 
 from __future__ import annotations
-from typing import Any, Optional
+
 import numpy as np
 
-from molfun.ml.features import ProteinFeaturizer, DEFAULT_FEATURES
-
+from molfun.ml.features import ProteinFeaturizer
 
 # ------------------------------------------------------------------
 # Estimator factories
 # ------------------------------------------------------------------
 
+
 def _make_classifier(name: str, **kw):
     if name == "random_forest":
         from sklearn.ensemble import RandomForestClassifier
+
         return RandomForestClassifier(n_estimators=kw.pop("n_estimators", 500), **kw)
     if name == "svm":
         from sklearn.svm import SVC
+
         return SVC(kernel=kw.pop("kernel", "rbf"), probability=True, **kw)
     if name == "logistic":
         from sklearn.linear_model import LogisticRegression
+
         return LogisticRegression(max_iter=kw.pop("max_iter", 1000), **kw)
     if name == "gradient_boosting":
         from sklearn.ensemble import GradientBoostingClassifier
+
         return GradientBoostingClassifier(**kw)
     if name == "knn":
         from sklearn.neighbors import KNeighborsClassifier
+
         return KNeighborsClassifier(**kw)
     if name == "xgboost":
         from xgboost import XGBClassifier
+
         return XGBClassifier(use_label_encoder=False, eval_metric="logloss", **kw)
     raise ValueError(f"Unknown classifier: '{name}'. Available: {CLASSIFIER_NAMES}")
 
@@ -54,24 +60,31 @@ def _make_classifier(name: str, **kw):
 def _make_regressor(name: str, **kw):
     if name == "random_forest":
         from sklearn.ensemble import RandomForestRegressor
+
         return RandomForestRegressor(n_estimators=kw.pop("n_estimators", 500), **kw)
     if name == "svm":
         from sklearn.svm import SVR
+
         return SVR(kernel=kw.pop("kernel", "rbf"), **kw)
     if name == "linear":
         from sklearn.linear_model import Ridge
+
         return Ridge(**kw)
     if name == "lasso":
         from sklearn.linear_model import Lasso
+
         return Lasso(max_iter=kw.pop("max_iter", 5000), **kw)
     if name == "gradient_boosting":
         from sklearn.ensemble import GradientBoostingRegressor
+
         return GradientBoostingRegressor(**kw)
     if name == "knn":
         from sklearn.neighbors import KNeighborsRegressor
+
         return KNeighborsRegressor(**kw)
     if name == "xgboost":
         from xgboost import XGBRegressor
+
         return XGBRegressor(**kw)
     raise ValueError(f"Unknown regressor: '{name}'. Available: {REGRESSOR_NAMES}")
 
@@ -84,6 +97,7 @@ REGRESSOR_NAMES = ["random_forest", "svm", "linear", "lasso", "gradient_boosting
 # Base wrapper
 # ------------------------------------------------------------------
 
+
 class _ProteinEstimatorBase:
     """Shared logic for classifier and regressor wrappers."""
 
@@ -92,8 +106,8 @@ class _ProteinEstimatorBase:
     def __init__(
         self,
         estimator: str = "random_forest",
-        featurizer: Optional[ProteinFeaturizer] = None,
-        features: Optional[list[str]] = None,
+        featurizer: ProteinFeaturizer | None = None,
+        features: list[str] | None = None,
         scale: bool = True,
         **estimator_params,
     ):
@@ -130,6 +144,7 @@ class _ProteinEstimatorBase:
         steps = [("featurize", self.featurizer)]
         if self.scale:
             from sklearn.preprocessing import StandardScaler
+
             steps.append(("scale", StandardScaler()))
         steps.append(("model", self._make_fn(self.estimator_name, **self.estimator_params)))
 
@@ -148,6 +163,7 @@ class _ProteinEstimatorBase:
         steps = []
         if self.scale:
             from sklearn.preprocessing import StandardScaler
+
             steps.append(("scale", StandardScaler()))
         steps.append(("model", self._make_fn(self.estimator_name, **self.estimator_params)))
 
@@ -180,7 +196,7 @@ class _ProteinEstimatorBase:
         return self._pipeline
 
     @property
-    def feature_importances(self) -> Optional[np.ndarray]:
+    def feature_importances(self) -> np.ndarray | None:
         """Feature importances if the estimator supports them."""
         if self._pipeline is None:
             return None
@@ -216,12 +232,14 @@ class _ProteinEstimatorBase:
     def save(self, path: str) -> None:
         """Save the full model (featurizer + scaler + estimator) with joblib."""
         from molfun.ml.io import save_model
+
         save_model(self, path)
 
     @classmethod
     def load(cls, path: str):
         """Load a saved model."""
         from molfun.ml.io import load_model
+
         return load_model(path)
 
     def _check_fitted(self):
@@ -241,6 +259,7 @@ class _ProteinEstimatorBase:
 # Public classes
 # ------------------------------------------------------------------
 
+
 class ProteinClassifier(_ProteinEstimatorBase):
     """
     Sklearn-compatible protein classifier.
@@ -258,6 +277,7 @@ class ProteinClassifier(_ProteinEstimatorBase):
         preds = clf.predict(new_sequences)
         proba = clf.predict_proba(new_sequences)
     """
+
     _make_fn = staticmethod(_make_classifier)
 
     def predict_proba(self, X) -> np.ndarray:
@@ -282,6 +302,7 @@ class ProteinRegressor(_ProteinEstimatorBase):
         reg.fit(sequences, affinities)
         preds = reg.predict(new_sequences)
     """
+
     _make_fn = staticmethod(_make_regressor)
 
     def evaluate(self, X, y) -> dict[str, float]:

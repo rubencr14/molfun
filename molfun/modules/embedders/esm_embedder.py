@@ -10,12 +10,11 @@ Optionally extracts pair representations from ESM attention maps
 """
 
 from __future__ import annotations
-from typing import Optional
 
 import torch
 import torch.nn as nn
 
-from molfun.modules.embedders.base import BaseEmbedder, EmbedderOutput, EMBEDDER_REGISTRY
+from molfun.modules.embedders.base import EMBEDDER_REGISTRY, BaseEmbedder, EmbedderOutput
 
 
 @EMBEDDER_REGISTRY.register("esm")
@@ -66,13 +65,9 @@ class ESMEmbedder(BaseEmbedder):
         try:
             import esm as esm_lib
         except ImportError:
-            raise ImportError(
-                "ESM is required for ESMEmbedder: pip install fair-esm"
-            )
+            raise ImportError("ESM is required for ESMEmbedder: pip install fair-esm")
 
-        model, alphabet = esm_lib.pretrained.load_model_and_alphabet(
-            self._esm_model_name
-        )
+        model, alphabet = esm_lib.pretrained.load_model_and_alphabet(self._esm_model_name)
         self._esm = model.to(device)
         self._alphabet = alphabet
         self._esm_dim = model.embed_dim
@@ -91,9 +86,9 @@ class ESMEmbedder(BaseEmbedder):
         self,
         aatype: torch.Tensor,
         residue_index: torch.Tensor,
-        msa: Optional[torch.Tensor] = None,
-        msa_mask: Optional[torch.Tensor] = None,
-        tokens: Optional[torch.Tensor] = None,
+        msa: torch.Tensor | None = None,
+        msa_mask: torch.Tensor | None = None,
+        tokens: torch.Tensor | None = None,
         **kwargs,
     ) -> EmbedderOutput:
         self._lazy_init(aatype.device)
@@ -111,7 +106,7 @@ class ESMEmbedder(BaseEmbedder):
         hidden = results["representations"][self._get_layer_idx()]
         # Remove BOS/EOS if ESM added them
         if hidden.shape[1] > aatype.shape[1]:
-            hidden = hidden[:, 1:aatype.shape[1] + 1, :]
+            hidden = hidden[:, 1 : aatype.shape[1] + 1, :]
 
         single = self._single_proj(hidden)
 

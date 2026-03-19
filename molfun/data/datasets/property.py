@@ -45,11 +45,12 @@ Usage::
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
+
 import csv as _csv
 import io
+from dataclasses import dataclass, field
+from pathlib import Path
+
 import numpy as np
 
 
@@ -68,7 +69,7 @@ class PropertyDataset:
     """
 
     sequences: list[str] = field(default_factory=list)
-    targets: Optional[np.ndarray] = None
+    targets: np.ndarray | None = None
     pdb_ids: list[str] = field(default_factory=list)
     pdb_paths: list[Path] = field(default_factory=list)
     target_name: str = "target"
@@ -118,8 +119,8 @@ class PropertyDataset:
         sequence_col: str = "sequence",
         target_col: str = "target",
         pdb_id_col: str = "pdb_id",
-        sep: Optional[str] = None,
-        pdb_dir: Optional[str | Path] = None,
+        sep: str | None = None,
+        pdb_dir: str | Path | None = None,
         pdb_fmt: str = "cif",
     ) -> PropertyDataset:
         """
@@ -174,8 +175,9 @@ class PropertyDataset:
                 if pdb_dir_path:
                     pdb_paths.append(pdb_dir_path / f"{pid}.{pdb_fmt}")
 
-            extra = {k: v for k, v in row.items()
-                     if k not in (sequence_col, target_col, pdb_id_col)}
+            extra = {
+                k: v for k, v in row.items() if k not in (sequence_col, target_col, pdb_id_col)
+            }
             if extra:
                 metadata.append(extra)
 
@@ -195,7 +197,7 @@ class PropertyDataset:
         csv_path: str | Path,
         target_col: str = "target",
         pdb_id_col: str = "pdb_id",
-        sep: Optional[str] = None,
+        sep: str | None = None,
     ) -> PropertyDataset:
         """
         Combine PDB paths from a fetch step with labels from a CSV.
@@ -203,8 +205,7 @@ class PropertyDataset:
         Matches PDB file stems to the pdb_id column. Only structures
         that have a matching label are kept.
         """
-        csv_ds = cls.from_csv(csv_path, target_col=target_col,
-                              pdb_id_col=pdb_id_col, sep=sep)
+        csv_ds = cls.from_csv(csv_path, target_col=target_col, pdb_id_col=pdb_id_col, sep=sep)
         if not csv_ds.has_targets:
             raise ValueError(f"CSV has no '{target_col}' column")
 
@@ -231,9 +232,9 @@ class PropertyDataset:
     @classmethod
     def from_inline(
         cls,
-        sequences: Optional[list[str]] = None,
-        targets: Optional[list[float]] = None,
-        pdb_paths: Optional[list[str | Path]] = None,
+        sequences: list[str] | None = None,
+        targets: list[float] | None = None,
+        pdb_paths: list[str | Path] | None = None,
         target_name: str = "target",
     ) -> PropertyDataset:
         """Create dataset from in-memory data."""
@@ -261,6 +262,7 @@ class PropertyDataset:
             raise ValueError("No sequences or pdb_paths to extract from")
 
         from molfun.data.parsers import auto_parser
+
         sequences = []
         for p in self.pdb_paths:
             parser = auto_parser(str(p))

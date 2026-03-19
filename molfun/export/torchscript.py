@@ -19,8 +19,10 @@ Usage::
 """
 
 from __future__ import annotations
+
+import contextlib
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Literal
 
 import torch
 import torch.nn as nn
@@ -88,10 +90,8 @@ def export_torchscript(
             raise ValueError(f"Unknown mode '{mode}'. Use 'trace' or 'script'.")
 
     if optimize:
-        try:
+        with contextlib.suppress(Exception):
             scripted = torch.jit.optimize_for_inference(scripted)
-        except Exception:
-            pass
 
     scripted.save(str(path))
 

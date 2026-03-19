@@ -6,7 +6,7 @@ which is critical for meaningful generalization benchmarks.
 """
 
 from __future__ import annotations
-from typing import Optional
+
 import random
 import subprocess
 import tempfile
@@ -44,8 +44,8 @@ class DataSplitter:
         n_val = int(n * val_frac)
 
         test_idx = indices[:n_test]
-        val_idx = indices[n_test:n_test + n_val]
-        train_idx = indices[n_test + n_val:]
+        val_idx = indices[n_test : n_test + n_val]
+        train_idx = indices[n_test + n_val :]
 
         return Subset(dataset, train_idx), Subset(dataset, val_idx), Subset(dataset, test_idx)
 
@@ -89,8 +89,8 @@ class DataSplitter:
     def by_family(
         dataset,
         families: list[str],
-        val_families: Optional[set[str]] = None,
-        test_families: Optional[set[str]] = None,
+        val_families: set[str] | None = None,
+        test_families: set[str] | None = None,
         val_frac: float = 0.1,
         test_frac: float = 0.1,
         seed: int = 42,
@@ -117,7 +117,7 @@ class DataSplitter:
             n_test = max(1, int(len(unique_families) * test_frac))
             n_val = max(1, int(len(unique_families) * val_frac))
             test_families = set(unique_families[:n_test])
-            val_families = set(unique_families[n_test:n_test + n_val])
+            val_families = set(unique_families[n_test : n_test + n_val])
 
         train_idx, val_idx, test_idx = [], [], []
         for i, fam in enumerate(families):
@@ -166,6 +166,7 @@ class DataSplitter:
 # Internal: MMseqs2 clustering
 # ------------------------------------------------------------------
 
+
 def _cluster_mmseqs(
     sequences: list[str],
     threshold: float,
@@ -189,16 +190,30 @@ def _cluster_mmseqs(
 
         subprocess.run(
             [mmseqs_path, "createdb", str(fasta), str(db)],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
-            [mmseqs_path, "cluster", str(db), str(clu), str(tmpdir),
-             "--min-seq-id", str(threshold), "-c", "0.8", "--cov-mode", "0"],
-            check=True, capture_output=True,
+            [
+                mmseqs_path,
+                "cluster",
+                str(db),
+                str(clu),
+                str(tmpdir),
+                "--min-seq-id",
+                str(threshold),
+                "-c",
+                "0.8",
+                "--cov-mode",
+                "0",
+            ],
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             [mmseqs_path, "createtsv", str(db), str(db), str(clu), str(tsv)],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
 
         # Parse TSV: representative \t member
@@ -241,7 +256,7 @@ def _split_by_clusters(
     n_val = max(1, int(len(unique) * val_frac))
 
     test_clusters = set(unique[:n_test])
-    val_clusters = set(unique[n_test:n_test + n_val])
+    val_clusters = set(unique[n_test : n_test + n_val])
 
     train_idx, val_idx, test_idx = [], [], []
     for i, c in enumerate(clusters):

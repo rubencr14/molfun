@@ -10,6 +10,7 @@ are compatible with AlphaFoldLoss and other OpenFold internals.
 """
 
 from __future__ import annotations
+
 import torch
 
 
@@ -57,10 +58,10 @@ def fill_missing_batch_fields(batch: dict) -> dict:
         New dict with ``resolution``, ``true_msa``, and ``bert_mask`` added
         if they were absent.
     """
-    batch  = dict(batch)
-    ref    = batch.get("aatype")
+    batch = dict(batch)
+    ref = batch.get("aatype")
     device = ref.device if ref is not None else torch.device("cpu")
-    B      = ref.shape[0] if (ref is not None and ref.dim() > 0) else 1
+    B = ref.shape[0] if (ref is not None and ref.dim() > 0) else 1
 
     if "resolution" not in batch:
         batch["resolution"] = torch.zeros(B, device=device)
@@ -70,10 +71,8 @@ def fill_missing_batch_fields(batch: dict) -> dict:
         if msa is not None:
             batch["true_msa"] = msa.clone()
         elif "msa_feat" in batch:
-            s = batch["msa_feat"].shape          # [B, N_msa, L, 49]
-            batch["true_msa"] = torch.zeros(
-                s[0], s[1], s[2], dtype=torch.long, device=device
-            )
+            s = batch["msa_feat"].shape  # [B, N_msa, L, 49]
+            batch["true_msa"] = torch.zeros(s[0], s[1], s[2], dtype=torch.long, device=device)
         else:
             batch["true_msa"] = torch.zeros(B, 1, 1, dtype=torch.long, device=device)
 
@@ -102,26 +101,26 @@ def make_zero_violation(ref: torch.Tensor) -> dict:
     Returns:
         Dict with the same structure as ``find_structural_violations`` output.
     """
-    z1     = ref.new_zeros(())
-    B, L   = ref.shape[:2]
-    z_BL   = ref.new_zeros(B, L)
+    z1 = ref.new_zeros(())
+    B, L = ref.shape[:2]
+    z_BL = ref.new_zeros(B, L)
     z_BL14 = ref.new_zeros(B, L, 14)
     return {
         "between_residues": {
-            "bonds_c_n_loss_mean":                    z1,
-            "angles_ca_c_n_loss_mean":                z1,
-            "angles_c_n_ca_loss_mean":                z1,
-            "connections_per_residue_loss_sum":        z_BL,
-            "connections_per_residue_violation_mask":  z_BL,
-            "clashes_mean_loss":                       z1,
-            "clashes_per_atom_loss_sum":               z_BL14,
-            "clashes_per_atom_clash_mask":             z_BL14,
-            "clashes_per_atom_num_clash":              z_BL14,
+            "bonds_c_n_loss_mean": z1,
+            "angles_ca_c_n_loss_mean": z1,
+            "angles_c_n_ca_loss_mean": z1,
+            "connections_per_residue_loss_sum": z_BL,
+            "connections_per_residue_violation_mask": z_BL,
+            "clashes_mean_loss": z1,
+            "clashes_per_atom_loss_sum": z_BL14,
+            "clashes_per_atom_clash_mask": z_BL14,
+            "clashes_per_atom_num_clash": z_BL14,
         },
         "within_residues": {
-            "per_atom_loss_sum":    z_BL14,
-            "per_atom_violations":  z_BL14,
-            "per_atom_num_clash":   z_BL14,
+            "per_atom_loss_sum": z_BL14,
+            "per_atom_violations": z_BL14,
+            "per_atom_num_clash": z_BL14,
         },
         "total_per_residue_violations_mask": z_BL,
     }

@@ -11,13 +11,11 @@ For production with pre-trained AF2 weights, use OpenFoldAdapter.
 """
 
 from __future__ import annotations
-from typing import Optional
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from molfun.modules.embedders.base import BaseEmbedder, EmbedderOutput, EMBEDDER_REGISTRY
+from molfun.modules.embedders.base import EMBEDDER_REGISTRY, BaseEmbedder, EmbedderOutput
 
 
 @EMBEDDER_REGISTRY.register("input")
@@ -61,8 +59,8 @@ class InputEmbedder(BaseEmbedder):
         self,
         aatype: torch.Tensor,
         residue_index: torch.Tensor,
-        msa: Optional[torch.Tensor] = None,
-        msa_mask: Optional[torch.Tensor] = None,
+        msa: torch.Tensor | None = None,
+        msa_mask: torch.Tensor | None = None,
         **kwargs,
     ) -> EmbedderOutput:
         B, L = aatype.shape
@@ -71,7 +69,7 @@ class InputEmbedder(BaseEmbedder):
         single = self.aa_embed(aatype)  # [B, L, D_s]
 
         # Pair representation
-        left = self.pair_left(single)    # [B, L, D_p]
+        left = self.pair_left(single)  # [B, L, D_p]
         right = self.pair_right(single)  # [B, L, D_p]
         pair = left.unsqueeze(2) + right.unsqueeze(1)  # [B, L, L, D_p]
 

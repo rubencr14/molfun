@@ -12,14 +12,14 @@ control over how much attention output flows to the next layer.
 """
 
 from __future__ import annotations
-from typing import Optional
+
 import math
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from molfun.modules.attention.base import BaseAttention, ATTENTION_REGISTRY
+from molfun.modules.attention.base import ATTENTION_REGISTRY, BaseAttention
 
 
 @ATTENTION_REGISTRY.register("gated")
@@ -53,8 +53,8 @@ class GatedAttention(BaseAttention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        bias: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
+        bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
         logits = torch.matmul(q, k.transpose(-2, -1)) * self._scale
 

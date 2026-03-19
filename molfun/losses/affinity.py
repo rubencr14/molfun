@@ -20,7 +20,7 @@ result  = loss_fn(preds, targets)   # {"huber_loss": tensor}
 """
 
 from __future__ import annotations
-from typing import Optional
+
 import torch
 import torch.nn.functional as F
 
@@ -34,8 +34,8 @@ class MSELoss(LossFunction):
     def forward(
         self,
         preds: torch.Tensor,
-        targets: Optional[torch.Tensor] = None,
-        batch: Optional[dict] = None,
+        targets: torch.Tensor | None = None,
+        batch: dict | None = None,
     ) -> dict[str, torch.Tensor]:
         targets = _check_targets(targets, "MSELoss")
         return {"affinity_loss": F.mse_loss(preds, targets.view_as(preds))}
@@ -48,8 +48,8 @@ class MAELoss(LossFunction):
     def forward(
         self,
         preds: torch.Tensor,
-        targets: Optional[torch.Tensor] = None,
-        batch: Optional[dict] = None,
+        targets: torch.Tensor | None = None,
+        batch: dict | None = None,
     ) -> dict[str, torch.Tensor]:
         targets = _check_targets(targets, "MAELoss")
         return {"affinity_loss": F.l1_loss(preds, targets.view_as(preds))}
@@ -71,15 +71,11 @@ class HuberLoss(LossFunction):
     def forward(
         self,
         preds: torch.Tensor,
-        targets: Optional[torch.Tensor] = None,
-        batch: Optional[dict] = None,
+        targets: torch.Tensor | None = None,
+        batch: dict | None = None,
     ) -> dict[str, torch.Tensor]:
         targets = _check_targets(targets, "HuberLoss")
-        return {
-            "affinity_loss": F.huber_loss(
-                preds, targets.view_as(preds), delta=self.delta
-            )
-        }
+        return {"affinity_loss": F.huber_loss(preds, targets.view_as(preds), delta=self.delta)}
 
 
 @LOSS_REGISTRY.register("pearson")
@@ -95,8 +91,8 @@ class PearsonLoss(LossFunction):
     def forward(
         self,
         preds: torch.Tensor,
-        targets: Optional[torch.Tensor] = None,
-        batch: Optional[dict] = None,
+        targets: torch.Tensor | None = None,
+        batch: dict | None = None,
     ) -> dict[str, torch.Tensor]:
         targets = _check_targets(targets, "PearsonLoss")
         p = preds.view(-1)
@@ -108,16 +104,17 @@ class PearsonLoss(LossFunction):
 
         p_mean = p.mean()
         t_mean = t.mean()
-        cov    = ((p - p_mean) * (t - t_mean)).mean()
-        std_p  = p.std(unbiased=False).clamp(min=1e-8)
-        std_t  = t.std(unbiased=False).clamp(min=1e-8)
-        r      = cov / (std_p * std_t)
+        cov = ((p - p_mean) * (t - t_mean)).mean()
+        std_p = p.std(unbiased=False).clamp(min=1e-8)
+        std_t = t.std(unbiased=False).clamp(min=1e-8)
+        r = cov / (std_p * std_t)
         return {"affinity_loss": 1.0 - r}
 
 
 # ──────────────────────────────────────────────────────────────────────
 # Internal helpers
 # ──────────────────────────────────────────────────────────────────────
+
 
 def _check_targets(targets, name: str) -> torch.Tensor:
     if targets is None:

@@ -7,8 +7,8 @@ attention, pair attention, and cross-attention variants.
 """
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Optional
 from dataclasses import dataclass
 
 import torch
@@ -22,6 +22,7 @@ ATTENTION_REGISTRY = ModuleRegistry("attention")
 @dataclass
 class AttentionConfig:
     """Shared configuration understood by all attention implementations."""
+
     num_heads: int = 8
     head_dim: int = 32
     dropout: float = 0.0
@@ -52,8 +53,8 @@ class BaseAttention(ABC, nn.Module):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        bias: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
+        bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -80,7 +81,7 @@ class BaseAttention(ABC, nn.Module):
         return self.num_heads * self.head_dim
 
     @classmethod
-    def from_config(cls, cfg: AttentionConfig, **overrides) -> "BaseAttention":
+    def from_config(cls, cfg: AttentionConfig, **overrides) -> BaseAttention:
         """Build from a dataclass config, with optional field overrides."""
         kwargs = {**cfg.__dict__, **overrides}
         return cls(**kwargs)

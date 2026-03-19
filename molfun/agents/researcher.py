@@ -7,14 +7,12 @@ strategies, and uses that knowledge to guide its experiments.
 """
 
 from __future__ import annotations
-from typing import Optional
 
-from molfun.agents.base import BaseAgent, AgentConfig
+from molfun.agents.base import AgentConfig, BaseAgent
 from molfun.agents.llm.base import BaseLLM
-from molfun.agents.tools import MolfunTools
 from molfun.agents.memory import ExperimentMemory
+from molfun.agents.tools import MolfunTools
 from molfun.tracking.base import BaseTracker
-
 
 RESEARCH_SYSTEM_PROMPT = """\
 You are a protein ML research agent. You autonomously design, train, and \
@@ -113,10 +111,10 @@ class ResearchAgent(BaseAgent):
         self,
         llm: BaseLLM,
         tools: MolfunTools,
-        memory: Optional[ExperimentMemory] = None,
-        config: Optional[AgentConfig] = None,
-        tracker: Optional[BaseTracker] = None,
-        custom_system_prompt: Optional[str] = None,
+        memory: ExperimentMemory | None = None,
+        config: AgentConfig | None = None,
+        tracker: BaseTracker | None = None,
+        custom_system_prompt: str | None = None,
     ):
         super().__init__(llm=llm, tools=tools, memory=memory, config=config, tracker=tracker)
         self._custom_system_prompt = custom_system_prompt

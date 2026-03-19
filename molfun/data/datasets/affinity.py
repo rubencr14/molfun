@@ -6,14 +6,15 @@ convenience constructors from PDBbind or CSV sources.
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 from pathlib import Path
-from typing import Optional, Callable
 
 import torch
 from torch.utils.data import Dataset
 
-from molfun.data.sources.affinity import AffinityRecord
 from molfun.data.datasets.structure import StructureDataset, collate_structure_batch
+from molfun.data.sources.affinity import AffinityRecord
 
 
 class AffinityDataset(Dataset):
@@ -49,9 +50,9 @@ class AffinityDataset(Dataset):
         records: list[AffinityRecord],
         pdb_dir: str | Path,
         fmt: str = "cif",
-        features_dir: Optional[str | Path] = None,
+        features_dir: str | Path | None = None,
         max_seq_len: int = 512,
-        transform: Optional[Callable] = None,
+        transform: Callable | None = None,
     ) -> AffinityDataset:
         """
         Build dataset from AffinityRecords + a directory of PDB/mmCIF files.
@@ -98,19 +99,25 @@ class AffinityDataset(Dataset):
         fmt: str = "cif",
         pdb_col: str = "pdb_id",
         affinity_col: str = "affinity",
-        features_dir: Optional[str | Path] = None,
+        features_dir: str | Path | None = None,
         max_seq_len: int = 512,
-        transform: Optional[Callable] = None,
+        transform: Callable | None = None,
     ) -> AffinityDataset:
         """Build dataset directly from a CSV file + PDB directory."""
         from molfun.data.sources.affinity import AffinityFetcher
 
         records = AffinityFetcher.from_csv(
-            str(csv_path), pdb_col=pdb_col, affinity_col=affinity_col,
+            str(csv_path),
+            pdb_col=pdb_col,
+            affinity_col=affinity_col,
         )
         return cls.from_records(
-            records, pdb_dir, fmt=fmt, features_dir=features_dir,
-            max_seq_len=max_seq_len, transform=transform,
+            records,
+            pdb_dir,
+            fmt=fmt,
+            features_dir=features_dir,
+            max_seq_len=max_seq_len,
+            transform=transform,
         )
 
     # ------------------------------------------------------------------

@@ -6,7 +6,7 @@ we just add trainable LoRA parameters on top.
 """
 
 from __future__ import annotations
-from typing import Optional
+
 from molfun.training.head_only import HeadOnlyFinetune
 from molfun.training.peft import MolfunPEFT
 
@@ -39,10 +39,10 @@ class LoRAFinetune(HeadOnlyFinetune):
         rank: int = 8,
         alpha: float = 16.0,
         dropout: float = 0.0,
-        target_modules: Optional[list[str]] = None,
+        target_modules: list[str] | None = None,
         use_hf: bool = True,
-        lr_head: Optional[float] = None,
-        lr_lora: Optional[float] = None,
+        lr_head: float | None = None,
+        lr_lora: float | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -81,7 +81,7 @@ class LoRAFinetune(HeadOnlyFinetune):
         model._peft = peft
 
     @property
-    def target_modules(self) -> Optional[list[str]]:
+    def target_modules(self) -> list[str] | None:
         return self._target_modules_override
 
     def param_groups(self, model) -> list[dict]:
@@ -93,18 +93,18 @@ class LoRAFinetune(HeadOnlyFinetune):
         head_params = list(model.head.parameters())
         if head_params:
             groups.append({"params": head_params, "lr": self.lr_head})
-        groups.append(
-            {"params": model._peft.trainable_parameters(), "lr": self.lr_lora}
-        )
+        groups.append({"params": model._peft.trainable_parameters(), "lr": self.lr_lora})
         return groups
 
     def describe(self) -> dict:
         d = super().describe()
-        d.update({
-            "rank": self.rank,
-            "alpha": self.alpha,
-            "target_modules": self._target_modules_override,
-            "lr_head": self.lr_head,
-            "lr_lora": self.lr_lora,
-        })
+        d.update(
+            {
+                "rank": self.rank,
+                "alpha": self.alpha,
+                "target_modules": self._target_modules_override,
+                "lr_head": self.lr_head,
+                "lr_lora": self.lr_lora,
+            }
+        )
         return d

@@ -9,16 +9,16 @@ Utilities shared by all FinetuneStrategy subclasses:
 """
 
 from __future__ import annotations
+
 import math
-from typing import Optional
 
 import torch
 import torch.nn as nn
 
-
 # ======================================================================
 # EMA
 # ======================================================================
+
 
 class EMA:
     """
@@ -31,7 +31,7 @@ class EMA:
     """
 
     def __init__(self, parameters: list[nn.Parameter], decay: float = 0.999):
-        self.decay  = decay
+        self.decay = decay
         self.shadow = [p.data.clone() for p in parameters]
         self.backup: list[torch.Tensor] = []
         self._params = parameters
@@ -58,12 +58,13 @@ class EMA:
 
     def load_state_dict(self, state: dict):
         self.shadow = state["shadow"]
-        self.decay  = state["decay"]
+        self.decay = state["decay"]
 
 
 # ======================================================================
 # Scheduler
 # ======================================================================
+
 
 def build_scheduler(
     optimizer: torch.optim.Optimizer,
@@ -86,6 +87,7 @@ def build_scheduler(
         A ``LambdaLR`` scheduler whose multiplier is applied to
         ``optimizer.param_groups[*]["lr"]``.
     """
+
     def _lr_lambda(step: int) -> float:
         if step < warmup_steps:
             return step / max(warmup_steps, 1)
@@ -105,6 +107,7 @@ def build_scheduler(
 # ======================================================================
 # Batch utilities
 # ======================================================================
+
 
 def unpack_batch(batch_data):
     """
@@ -150,10 +153,7 @@ def to_device(batch, device):
     Non-tensor values are left untouched.
     """
     if isinstance(batch, dict):
-        return {
-            k: v.to(device) if isinstance(v, torch.Tensor) else v
-            for k, v in batch.items()
-        }
+        return {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     if isinstance(batch, torch.Tensor):
         return batch.to(device)
     return batch

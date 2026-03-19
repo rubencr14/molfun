@@ -16,21 +16,21 @@ import triton.language as tl
 
 @triton.autotune(
     configs=[
-        triton.Config({"BM": 64,  "BN": 64,  "BK": 32}, num_warps=4, num_stages=2),
-        triton.Config({"BM": 128, "BN": 64,  "BK": 32}, num_warps=4, num_stages=3),
-        triton.Config({"BM": 64,  "BN": 128, "BK": 32}, num_warps=4, num_stages=3),
+        triton.Config({"BM": 64, "BN": 64, "BK": 32}, num_warps=4, num_stages=2),
+        triton.Config({"BM": 128, "BN": 64, "BK": 32}, num_warps=4, num_stages=3),
+        triton.Config({"BM": 64, "BN": 128, "BK": 32}, num_warps=4, num_stages=3),
         triton.Config({"BM": 128, "BN": 128, "BK": 32}, num_warps=8, num_stages=3),
-        triton.Config({"BM": 64,  "BN": 64,  "BK": 64}, num_warps=4, num_stages=3),
+        triton.Config({"BM": 64, "BN": 64, "BK": 64}, num_warps=4, num_stages=3),
     ],
     key=["M", "N", "K"],
 )
 @triton.jit
 def fused_linear_bias_residual_kernel(
-    h_ptr,                       # H pointer (input activations) [M, K]
-    w_ptr,                       # W pointer (weights) [N, K]
-    b_ptr,                       # bias pointer [N]
-    r_ptr,                       # residual pointer [M, N]
-    y_ptr,                       # output pointer [M, N]
+    h_ptr,  # H pointer (input activations) [M, K]
+    w_ptr,  # W pointer (weights) [N, K]
+    b_ptr,  # bias pointer [N]
+    r_ptr,  # residual pointer [M, N]
+    y_ptr,  # output pointer [M, N]
     M: tl.constexpr,
     N: tl.constexpr,
     K: tl.constexpr,
@@ -45,7 +45,7 @@ def fused_linear_bias_residual_kernel(
     BM: tl.constexpr,
     BN: tl.constexpr,
     BK: tl.constexpr,
-    IN_DTYPE: tl.constexpr,      # tl.float16 or tl.bfloat16 (match inputs)
+    IN_DTYPE: tl.constexpr,  # tl.float16 or tl.bfloat16 (match inputs)
 ):
     # 2D program ids -> one output tile [BM, BN]
     pid_m = tl.program_id(axis=0)
@@ -117,9 +117,13 @@ def fused_linear_bias_residual_triton(
     - residual: [*, N]   (same leading dims as h, last dim = N)
     - dtype: fp16 or bf16, all on CUDA
     """
-    assert h.is_cuda and weight.is_cuda and bias.is_cuda and residual.is_cuda, "All tensors must be on CUDA"
+    assert h.is_cuda and weight.is_cuda and bias.is_cuda and residual.is_cuda, (
+        "All tensors must be on CUDA"
+    )
     assert h.dtype in (torch.float16, torch.bfloat16), "Use fp16/bf16"
-    assert weight.dtype == h.dtype and bias.dtype == h.dtype and residual.dtype == h.dtype, "All dtypes must match"
+    assert weight.dtype == h.dtype and bias.dtype == h.dtype and residual.dtype == h.dtype, (
+        "All dtypes must match"
+    )
     assert weight.ndim == 2 and bias.ndim == 1
     assert h.shape[-1] == weight.shape[1], "h in_features must match weight in_features (K)"
     assert weight.shape[0] == bias.shape[0], "weight out_features (N) must match bias"
@@ -127,24 +131,35 @@ def fused_linear_bias_residual_triton(
     assert residual.shape[-1] == weight.shape[0], "residual last dim must be N"
 
     # Flatten to 2D
-    h2 = h.contiguous().view(-1, h.shape[-1])              # [M, K]
-    r2 = residual.contiguous().view(-1, residual.shape[-1])# [M, N]
+    h2 = h.contiguous().view(-1, h.shape[-1])  # [M, K]
+    r2 = residual.contiguous().view(-1, residual.shape[-1])  # [M, N]
     M, K = h2.shape
     N = weight.shape[0]
 
     y2 = torch.empty((M, N), device=h.device, dtype=h.dtype)
 
-    grid = lambda META: (triton.cdiv(M, META["BM"]), triton.cdiv(N, META["BN"]))
+    def grid(META):
+        return (triton.cdiv(M, META["BM"]), triton.cdiv(N, META["BN"]))
 
     in_dtype = tl.float16 if h.dtype == torch.float16 else tl.bfloat16
 
     fused_linear_bias_residual_kernel[grid](
-        h2, weight, bias, r2, y2,
-        M=M, N=N, K=K,
-        stride_hm=h2.stride(0), stride_hk=h2.stride(1),
-        stride_wn=weight.stride(0), stride_wk=weight.stride(1),
-        stride_rm=r2.stride(0), stride_rn=r2.stride(1),
-        stride_ym=y2.stride(0), stride_yn=y2.stride(1),
+        h2,
+        weight,
+        bias,
+        r2,
+        y2,
+        M=M,
+        N=N,
+        K=K,
+        stride_hm=h2.stride(0),
+        stride_hk=h2.stride(1),
+        stride_wn=weight.stride(0),
+        stride_wk=weight.stride(1),
+        stride_rm=r2.stride(0),
+        stride_rn=r2.stride(1),
+        stride_ym=y2.stride(0),
+        stride_yn=y2.stride(1),
         IN_DTYPE=in_dtype,
     )
 

@@ -19,11 +19,11 @@ import triton
 import triton.language as tl
 
 """
-This kernel implements standard Layer Normalization on a per-token basis (row-wise). 
-It follows the formula y = (x - mean) / sqrt(var + eps) * gamma + beta. 
-The calculation is performed in two passes: the first pass computes the mean and variance 
-using the moments formula Var(X) = E[X^2] - (E[X])^2, accumulating in float32 for numerical 
-stability. The second pass normalizes the input using the reciprocal square root (rsqrt) 
+This kernel implements standard Layer Normalization on a per-token basis (row-wise).
+It follows the formula y = (x - mean) / sqrt(var + eps) * gamma + beta.
+The calculation is performed in two passes: the first pass computes the mean and variance
+using the moments formula Var(X) = E[X^2] - (E[X])^2, accumulating in float32 for numerical
+stability. The second pass normalizes the input using the reciprocal square root (rsqrt)
 of the variance and applies the learned affine transformation parameters (gamma and beta).
 """
 
@@ -128,10 +128,16 @@ def layernorm_triton(
 
     grid = (M,)
     layernorm_fwd_kernel[grid](
-        x2, gamma, beta, y2,
-        M=M, D=D,
-        stride_xm=x2.stride(0), stride_xd=x2.stride(1),
-        stride_ym=y2.stride(0), stride_yd=y2.stride(1),
+        x2,
+        gamma,
+        beta,
+        y2,
+        M=M,
+        D=D,
+        stride_xm=x2.stride(0),
+        stride_xd=x2.stride(1),
+        stride_ym=y2.stride(0),
+        stride_yd=y2.stride(1),
         eps=eps,
     )
 

@@ -7,10 +7,8 @@ property fields. No external dependencies.
 """
 
 from __future__ import annotations
-from typing import Optional
 
-from molfun.data.parsers.base import BaseLigandParser, ParsedMolecule, ParsedAtom, ParsedBond
-
+from molfun.data.parsers.base import BaseLigandParser, ParsedAtom, ParsedBond, ParsedMolecule
 
 _BOND_TYPE_MAP = {"1": 1, "2": 2, "3": 3, "4": 4}  # 4 = aromatic
 
@@ -44,7 +42,7 @@ class SDFParser(BaseLigandParser):
 
         return molecules
 
-    def _parse_mol_block(self, block: str) -> Optional[ParsedMolecule]:
+    def _parse_mol_block(self, block: str) -> ParsedMolecule | None:
         lines = block.splitlines()
         if len(lines) < 4:
             return None
@@ -90,7 +88,7 @@ class SDFParser(BaseLigandParser):
         )
 
     @staticmethod
-    def _parse_atom_line(line: str, idx: int) -> Optional[ParsedAtom]:
+    def _parse_atom_line(line: str, idx: int) -> ParsedAtom | None:
         parts = line.split()
         if len(parts) < 4:
             return None
@@ -110,13 +108,16 @@ class SDFParser(BaseLigandParser):
                 pass
 
         return ParsedAtom(
-            index=idx, element=element,
-            x=x, y=y, z=z,
+            index=idx,
+            element=element,
+            x=x,
+            y=y,
+            z=z,
             charge=charge,
         )
 
     @staticmethod
-    def _parse_bond_line(line: str) -> Optional[ParsedBond]:
+    def _parse_bond_line(line: str) -> ParsedBond | None:
         parts = line.split()
         if len(parts) < 3:
             return None

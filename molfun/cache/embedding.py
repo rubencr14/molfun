@@ -11,13 +11,13 @@ Three backends:
 """
 
 from __future__ import annotations
-from collections import OrderedDict
-from pathlib import Path
-from typing import Optional, Union, Literal
+
 import hashlib
 import json
-import os
 import time
+from collections import OrderedDict
+from pathlib import Path
+from typing import Literal, Union
 
 import numpy as np
 
@@ -42,7 +42,7 @@ class _MemoryBackend:
         self._max_size = max_size
         self._store: OrderedDict[str, tuple[np.ndarray, float]] = OrderedDict()
 
-    def get(self, key: str, ttl: Optional[float]) -> Optional[np.ndarray]:
+    def get(self, key: str, ttl: float | None) -> np.ndarray | None:
         if key not in self._store:
             return None
         value, ts = self._store[key]
@@ -89,7 +89,7 @@ class _DiskBackend:
     def _meta_path(self, key: str) -> Path:
         return self._dir / f"{key}.meta"
 
-    def get(self, key: str, ttl: Optional[float]) -> Optional[np.ndarray]:
+    def get(self, key: str, ttl: float | None) -> np.ndarray | None:
         p = self._path(key)
         if not p.exists():
             return None
@@ -169,20 +169,20 @@ class EmbeddingCache:
         backend: Literal["memory", "disk", "tiered"] = "tiered",
         directory: str = "~/.molfun/embed_cache",
         max_memory: int = 1024,
-        ttl: Optional[float] = None,
+        ttl: float | None = None,
     ):
         self.backend_type = backend
         self.ttl = ttl
 
-        self._mem: Optional[_MemoryBackend] = None
-        self._disk: Optional[_DiskBackend] = None
+        self._mem: _MemoryBackend | None = None
+        self._disk: _DiskBackend | None = None
 
         if backend in ("memory", "tiered"):
             self._mem = _MemoryBackend(max_size=max_memory)
         if backend in ("disk", "tiered"):
             self._disk = _DiskBackend(directory=directory)
 
-    def get(self, key: Union[str, dict]) -> Optional[np.ndarray]:
+    def get(self, key: Union[str, dict]) -> np.ndarray | None:
         """
         Look up a cached embedding.
 
@@ -264,6 +264,7 @@ class EmbeddingCache:
             result = embed("MKWVT...")  # computed
             result = embed("MKWVT...")  # from cache
         """
+
         def wrapper(key, *args, **kwargs):
             hit = self.get(key)
             if hit is not None:
@@ -271,6 +272,7 @@ class EmbeddingCache:
             result = func(key, *args, **kwargs)
             self.put(key, result)
             return result
+
         wrapper.__name__ = func.__name__
         wrapper.__doc__ = func.__doc__
         return wrapper

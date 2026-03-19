@@ -3,38 +3,57 @@ CLI commands for downloading PDB structures, MSAs, and domain collections.
 """
 
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
 
 def fetch_domain(
     collection: Annotated[
-        Optional[str],
-        typer.Argument(help="Collection name (e.g. kinases, gpcr, sars_cov2). Use --list to see all."),
+        str | None,
+        typer.Argument(
+            help="Collection name (e.g. kinases, gpcr, sars_cov2). Use --list to see all."
+        ),
     ] = None,
     *,
-    list_collections: Annotated[bool, typer.Option("--list", help="List available collections.")] = False,
-    tag: Annotated[Optional[str], typer.Option(help="Filter collections by tag.")] = None,
-    pfam: Annotated[Optional[str], typer.Option(help="Pfam ID for custom query (e.g. PF00069).")] = None,
-    ec: Annotated[Optional[str], typer.Option(help="EC number (e.g. 2.7.11.1 or 2.7.*).")] = None,
-    go: Annotated[Optional[str], typer.Option(help="GO term (e.g. GO:0004672).")] = None,
-    taxonomy: Annotated[Optional[int], typer.Option(help="NCBI taxonomy ID (e.g. 9606 for human).")] = None,
-    keyword: Annotated[Optional[str], typer.Option(help="Free-text keyword.")] = None,
+    list_collections: Annotated[
+        bool, typer.Option("--list", help="List available collections.")
+    ] = False,
+    tag: Annotated[str | None, typer.Option(help="Filter collections by tag.")] = None,
+    pfam: Annotated[
+        str | None, typer.Option(help="Pfam ID for custom query (e.g. PF00069).")
+    ] = None,
+    ec: Annotated[str | None, typer.Option(help="EC number (e.g. 2.7.11.1 or 2.7.*).")] = None,
+    go: Annotated[str | None, typer.Option(help="GO term (e.g. GO:0004672).")] = None,
+    taxonomy: Annotated[
+        int | None, typer.Option(help="NCBI taxonomy ID (e.g. 9606 for human).")
+    ] = None,
+    keyword: Annotated[str | None, typer.Option(help="Free-text keyword.")] = None,
     output: Annotated[Path, typer.Option("-o", help="Output directory.")] = Path("data/structures"),
     fmt: Annotated[str, typer.Option(help="Format: cif or pdb.")] = "cif",
     max_structures: Annotated[int, typer.Option("--max", help="Max structures to download.")] = 500,
     resolution: Annotated[float, typer.Option(help="Max resolution (Angstrom).")] = 3.0,
-    deduplicate: Annotated[bool, typer.Option("--dedup", help="Deduplicate by sequence identity.")] = False,
-    identity: Annotated[float, typer.Option(help="Sequence identity threshold for dedup (0-1).")] = 0.3,
-    metadata: Annotated[bool, typer.Option("--metadata", help="Save metadata JSON alongside structures.")] = False,
+    deduplicate: Annotated[
+        bool, typer.Option("--dedup", help="Deduplicate by sequence identity.")
+    ] = False,
+    identity: Annotated[
+        float, typer.Option(help="Sequence identity threshold for dedup (0-1).")
+    ] = 0.3,
+    metadata: Annotated[
+        bool, typer.Option("--metadata", help="Save metadata JSON alongside structures.")
+    ] = False,
     workers: Annotated[int, typer.Option("--workers", "-w", help="Parallel download threads.")] = 4,
-    progress: Annotated[bool, typer.Option("--progress", "-p", help="Show download progress bar.")] = True,
+    progress: Annotated[
+        bool, typer.Option("--progress", "-p", help="Show download progress bar.")
+    ] = True,
 ):
     """Fetch domain-specific protein structures from RCSB for fine-tuning."""
     if list_collections:
-        from molfun.data.collections import list_collections as lc, count_collection
+        from molfun.data.collections import count_collection
+        from molfun.data.collections import list_collections as lc
+
         specs = lc(tag=tag)
         if not specs:
             typer.echo("No collections found." + (f" (tag={tag})" if tag else ""))
@@ -57,12 +76,15 @@ def fetch_domain(
     fetcher = PDBFetcher(cache_dir=str(output), fmt=fmt, workers=workers, progress=progress)
 
     if collection:
-        from molfun.data.collections import fetch_collection, COLLECTIONS
+        from molfun.data.collections import COLLECTIONS, fetch_collection
+
         if collection not in COLLECTIONS:
             available = ", ".join(sorted(COLLECTIONS.keys()))
             typer.echo(f"Unknown collection '{collection}'. Available: {available}", err=True)
             raise typer.Exit(code=1)
-        typer.echo(f"Fetching collection '{collection}' (max {max_structures}, ≤{resolution} Å, {workers} workers)...")
+        typer.echo(
+            f"Fetching collection '{collection}' (max {max_structures}, ≤{resolution} Å, {workers} workers)..."
+        )
         paths = fetch_collection(
             collection,
             cache_dir=str(output),
@@ -77,7 +99,10 @@ def fetch_domain(
     else:
         has_filter = any([pfam, ec, go, taxonomy, keyword])
         if not has_filter:
-            typer.echo("Provide a collection name or at least one filter (--pfam, --ec, --go, --taxonomy, --keyword).", err=True)
+            typer.echo(
+                "Provide a collection name or at least one filter (--pfam, --ec, --go, --taxonomy, --keyword).",
+                err=True,
+            )
             typer.echo("Use --list to see available collections.")
             raise typer.Exit(code=1)
 
@@ -107,9 +132,12 @@ def fetch_domain(
 
         if deduplicate and pdb_ids:
             from molfun.data.sources.pdb import deduplicate_by_sequence
+
             original = len(pdb_ids)
             pdb_ids = deduplicate_by_sequence(pdb_ids, identity=identity)
-            typer.echo(f"  Deduplication: {original} → {len(pdb_ids)} representatives (identity={identity})")
+            typer.echo(
+                f"  Deduplication: {original} → {len(pdb_ids)} representatives (identity={identity})"
+            )
 
         paths = fetcher.fetch(pdb_ids)
 
@@ -121,6 +149,7 @@ def fetch_domain(
 
     if metadata and paths:
         import json as _json
+
         typer.echo("Fetching metadata from RCSB...")
         pdb_ids_for_meta = [Path(p).stem for p in paths]
         records = fetcher.fetch_with_metadata(pdb_ids_for_meta)
@@ -151,17 +180,21 @@ def fetch_domain(
 
 def fetch_pdb(
     ids: Annotated[
-        Optional[list[str]],
+        list[str] | None,
         typer.Argument(help="PDB IDs to download (e.g. 1abc 2xyz)."),
     ] = None,
-    pfam: Annotated[Optional[str], typer.Option(help="Pfam family (e.g. PF00069).")] = None,
-    uniprot: Annotated[Optional[list[str]], typer.Option(help="UniProt accessions.")] = None,
+    pfam: Annotated[str | None, typer.Option(help="Pfam family (e.g. PF00069).")] = None,
+    uniprot: Annotated[list[str] | None, typer.Option(help="UniProt accessions.")] = None,
     output: Annotated[Path, typer.Option("-o", help="Output directory.")] = Path("data/structures"),
     fmt: Annotated[str, typer.Option(help="Format: cif or pdb.")] = "cif",
-    max_structures: Annotated[int, typer.Option(help="Max structures for family/uniprot queries.")] = 100,
+    max_structures: Annotated[
+        int, typer.Option(help="Max structures for family/uniprot queries.")
+    ] = 100,
     resolution: Annotated[float, typer.Option(help="Max resolution (Å) for family/uniprot.")] = 3.0,
     workers: Annotated[int, typer.Option("--workers", "-w", help="Parallel download threads.")] = 4,
-    progress: Annotated[bool, typer.Option("--progress", "-p", help="Show download progress bar.")] = True,
+    progress: Annotated[
+        bool, typer.Option("--progress", "-p", help="Show download progress bar.")
+    ] = True,
 ):
     """Download PDB structures from RCSB by ID, Pfam family, or UniProt accession."""
     from molfun.data.sources.pdb import PDBFetcher
@@ -170,10 +203,14 @@ def fetch_pdb(
 
     if pfam:
         typer.echo(f"Fetching structures for Pfam {pfam} (max {max_structures}, ≤{resolution}Å)...")
-        paths = fetcher.fetch_by_family(pfam, max_structures=max_structures, resolution_max=resolution)
+        paths = fetcher.fetch_by_family(
+            pfam, max_structures=max_structures, resolution_max=resolution
+        )
     elif uniprot:
         typer.echo(f"Fetching structures for {len(uniprot)} UniProt accessions...")
-        paths = fetcher.fetch_by_uniprot(uniprot, max_per_accession=max_structures, resolution_max=resolution)
+        paths = fetcher.fetch_by_uniprot(
+            uniprot, max_per_accession=max_structures, resolution_max=resolution
+        )
     elif ids:
         typer.echo(f"Fetching {len(ids)} PDB structure(s)...")
         paths = fetcher.fetch(ids)
@@ -188,9 +225,13 @@ def fetch_pdb(
 
 
 def fetch_msa(
-    sequence: Annotated[Optional[str], typer.Argument(help="Protein sequence or PDB ID.")] = None,
-    ids_file: Annotated[Optional[Path], typer.Option("--ids", help="File with PDB IDs (one per line).")] = None,
-    backend: Annotated[str, typer.Option(help="Backend: colabfold, precomputed, single.")] = "colabfold",
+    sequence: Annotated[str | None, typer.Argument(help="Protein sequence or PDB ID.")] = None,
+    ids_file: Annotated[
+        Path | None, typer.Option("--ids", help="File with PDB IDs (one per line).")
+    ] = None,
+    backend: Annotated[
+        str, typer.Option(help="Backend: colabfold, precomputed, single.")
+    ] = "colabfold",
     msa_dir: Annotated[Path, typer.Option("-o", help="MSA output directory.")] = Path("data/msas"),
     max_depth: Annotated[int, typer.Option(help="Max MSA depth.")] = 512,
 ):

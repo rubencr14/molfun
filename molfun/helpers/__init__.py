@@ -9,7 +9,7 @@ Training utilities
     to_device         Move batch tensors to a device
 """
 
-from molfun.helpers.training import EMA, build_scheduler, unpack_batch, to_device
+from molfun.helpers.training import EMA, build_scheduler, to_device, unpack_batch
 
 __all__ = [
     "EMA",

@@ -27,18 +27,17 @@ Usage::
 """
 
 from __future__ import annotations
-from typing import Optional, Callable
+
 import csv
-import io
 import pickle
 import random
+from collections.abc import Callable
 
 import torch
 from torch.utils.data import IterableDataset, get_worker_info
 
-from molfun.data.storage import open_path, is_remote
 from molfun.data.parsers import PDBParser as _PDBStructureParser
-from molfun.data.parsers.base import ParsedStructure
+from molfun.data.storage import open_path
 
 
 class StreamingStructureDataset(IterableDataset):
@@ -60,8 +59,8 @@ class StreamingStructureDataset(IterableDataset):
         fmt: str = "pkl",
         shuffle_buffer: int = 0,
         max_seq_len: int = 512,
-        transform: Optional[Callable] = None,
-        storage_options: Optional[dict] = None,
+        transform: Callable | None = None,
+        storage_options: dict | None = None,
     ):
         """
         Args:
@@ -96,10 +95,12 @@ class StreamingStructureDataset(IterableDataset):
         with open_path(self.index_path, "r", self.storage_options) as f:
             reader = csv.DictReader(f)
             for row in reader:
-                rows.append({
-                    "pdb_id": row[self.pdb_col].strip().lower(),
-                    "label": float(row.get(self.label_col, "nan")),
-                })
+                rows.append(
+                    {
+                        "pdb_id": row[self.pdb_col].strip().lower(),
+                        "label": float(row.get(self.label_col, "nan")),
+                    }
+                )
         return rows
 
     def __len__(self) -> int:
@@ -145,7 +146,7 @@ class StreamingStructureDataset(IterableDataset):
         random.shuffle(buf)
         yield from buf
 
-    def _load_sample(self, entry: dict) -> Optional[tuple[dict, torch.Tensor]]:
+    def _load_sample(self, entry: dict) -> tuple[dict, torch.Tensor] | None:
         """Load a single structure + label from the object store."""
         pdb_id = entry["pdb_id"]
         label = torch.tensor([entry["label"]], dtype=torch.float32)
@@ -176,6 +177,7 @@ class StreamingStructureDataset(IterableDataset):
         if path.endswith(".cif"):
             try:
                 from molfun.data.parsers import CIFParser
+
                 parser = CIFParser(max_seq_len=self.max_seq_len)
             except ImportError:
                 raise ImportError("BioPython required for streaming CIF: pip install biopython")

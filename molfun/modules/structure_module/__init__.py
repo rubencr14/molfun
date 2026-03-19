@@ -15,12 +15,12 @@ Registry
 """
 
 from molfun.modules.structure_module.base import (
+    STRUCTURE_MODULE_REGISTRY,
     BaseStructureModule,
     StructureModuleOutput,
-    STRUCTURE_MODULE_REGISTRY,
 )
-from molfun.modules.structure_module.ipa import IPAStructureModule
 from molfun.modules.structure_module.diffusion import DiffusionStructureModule
+from molfun.modules.structure_module.ipa import IPAStructureModule
 
 __all__ = [
     "STRUCTURE_MODULE_REGISTRY",

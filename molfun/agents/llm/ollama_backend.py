@@ -11,7 +11,7 @@ Usage::
 """
 
 from __future__ import annotations
-from typing import Optional
+
 import json
 
 from molfun.agents.llm.base import BaseLLM, LLMResponse, ToolCall
@@ -22,14 +22,16 @@ def _convert_tools_to_ollama(tools: list[dict]) -> list[dict]:
     converted = []
     for tool in tools:
         fn = tool.get("function", {})
-        converted.append({
-            "type": "function",
-            "function": {
-                "name": fn["name"],
-                "description": fn.get("description", ""),
-                "parameters": fn.get("parameters", {}),
-            },
-        })
+        converted.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": fn["name"],
+                    "description": fn.get("description", ""),
+                    "parameters": fn.get("parameters", {}),
+                },
+            }
+        )
     return converted
 
 
@@ -44,7 +46,7 @@ class OllamaBackend(BaseLLM):
     def __init__(
         self,
         model: str = "llama3.1",
-        host: Optional[str] = None,
+        host: str | None = None,
         temperature: float = 0.3,
         max_tokens: int = 4096,
     ):
@@ -67,20 +69,24 @@ class OllamaBackend(BaseLLM):
     def chat(
         self,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
+        tools: list[dict] | None = None,
     ) -> LLMResponse:
         clean_messages = []
         for m in messages:
             if m["role"] == "tool":
-                clean_messages.append({
-                    "role": "tool",
-                    "content": m["content"],
-                })
+                clean_messages.append(
+                    {
+                        "role": "tool",
+                        "content": m["content"],
+                    }
+                )
             else:
-                clean_messages.append({
-                    "role": m["role"],
-                    "content": m.get("content", ""),
-                })
+                clean_messages.append(
+                    {
+                        "role": m["role"],
+                        "content": m.get("content", ""),
+                    }
+                )
 
         kwargs = {
             "model": self.model,
@@ -104,7 +110,9 @@ class OllamaBackend(BaseLLM):
         msg = response.get("message", response) if isinstance(response, dict) else response.message
 
         tool_calls = []
-        msg_tool_calls = msg.get("tool_calls") if isinstance(msg, dict) else getattr(msg, "tool_calls", None)
+        msg_tool_calls = (
+            msg.get("tool_calls") if isinstance(msg, dict) else getattr(msg, "tool_calls", None)
+        )
         if msg_tool_calls:
             for i, tc in enumerate(msg_tool_calls):
                 fn = tc.get("function", tc) if isinstance(tc, dict) else tc.function
@@ -115,11 +123,13 @@ class OllamaBackend(BaseLLM):
                         fn_args = json.loads(fn_args)
                     except json.JSONDecodeError:
                         fn_args = {}
-                tool_calls.append(ToolCall(
-                    id=f"ollama_{i}",
-                    name=fn_name,
-                    arguments=fn_args,
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=f"ollama_{i}",
+                        name=fn_name,
+                        arguments=fn_args,
+                    )
+                )
 
         content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
 

@@ -6,9 +6,9 @@ initial single and pair representations that feed into the trunk blocks.
 """
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -21,8 +21,9 @@ EMBEDDER_REGISTRY = ModuleRegistry("embedder")
 @dataclass
 class EmbedderOutput:
     """Standardized output from any embedder."""
-    single: torch.Tensor                          # [B, L, D_s] or [B, N, L, D_msa]
-    pair: Optional[torch.Tensor] = None           # [B, L, L, D_p]
+
+    single: torch.Tensor  # [B, L, D_s] or [B, N, L, D_msa]
+    pair: torch.Tensor | None = None  # [B, L, L, D_p]
 
 
 class BaseEmbedder(ABC, nn.Module):
@@ -40,8 +41,8 @@ class BaseEmbedder(ABC, nn.Module):
         self,
         aatype: torch.Tensor,
         residue_index: torch.Tensor,
-        msa: Optional[torch.Tensor] = None,
-        msa_mask: Optional[torch.Tensor] = None,
+        msa: torch.Tensor | None = None,
+        msa_mask: torch.Tensor | None = None,
         **kwargs,
     ) -> EmbedderOutput:
         """

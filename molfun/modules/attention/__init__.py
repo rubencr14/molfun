@@ -14,11 +14,11 @@ Custom
     class MyAttention(BaseAttention): ...
 """
 
-from molfun.modules.attention.base import BaseAttention, ATTENTION_REGISTRY
-from molfun.modules.attention.standard import StandardAttention
+from molfun.modules.attention.base import ATTENTION_REGISTRY, BaseAttention
 from molfun.modules.attention.flash import FlashAttention
-from molfun.modules.attention.linear import LinearAttention
 from molfun.modules.attention.gated import GatedAttention
+from molfun.modules.attention.linear import LinearAttention
+from molfun.modules.attention.standard import StandardAttention
 
 __all__ = [
     "ATTENTION_REGISTRY",

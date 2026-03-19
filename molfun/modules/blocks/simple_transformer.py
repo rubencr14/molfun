@@ -11,14 +11,13 @@ Architecture per block:
 """
 
 from __future__ import annotations
-from typing import Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from molfun.modules.blocks.base import BaseBlock, BlockOutput, BLOCK_REGISTRY
 from molfun.modules.attention.base import ATTENTION_REGISTRY
+from molfun.modules.blocks.base import BLOCK_REGISTRY, BaseBlock, BlockOutput
 
 
 @BLOCK_REGISTRY.register("simple_transformer")
@@ -36,7 +35,7 @@ class SimpleTransformerBlock(BaseBlock):
         n_heads: int = 20,
         ff_factor: int = 4,
         dropout: float = 0.0,
-        attention_cls: Optional[str] = None,
+        attention_cls: str | None = None,
         use_swiglu: bool = True,
         **kwargs,
     ):
@@ -72,9 +71,9 @@ class SimpleTransformerBlock(BaseBlock):
     def forward(
         self,
         single: torch.Tensor,
-        pair: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
-        pair_mask: Optional[torch.Tensor] = None,
+        pair: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
+        pair_mask: torch.Tensor | None = None,
     ) -> BlockOutput:
         B, L, D = single.shape
         H, Dh = self.n_heads, self.head_dim

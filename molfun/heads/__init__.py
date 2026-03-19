@@ -1,2 +1,2 @@
-from molfun.heads.affinity import AffinityHead
-from molfun.heads.structure import StructureLossHead
+from molfun.heads.affinity import AffinityHead  # noqa: F401
+from molfun.heads.structure import StructureLossHead  # noqa: F401

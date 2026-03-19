@@ -13,7 +13,6 @@ Usage::
 """
 
 from __future__ import annotations
-from typing import Optional
 
 from molfun.tracking.base import BaseTracker
 
@@ -76,8 +75,11 @@ class CompositeTracker(BaseTracker):
 
 def _warn(tracker: BaseTracker, method: str, error: Exception) -> None:
     import logging
+
     logger = logging.getLogger(__name__)
     logger.warning(
         "Tracker %s.%s failed: %s",
-        type(tracker).__name__, method, error,
+        type(tracker).__name__,
+        method,
+        error,
     )

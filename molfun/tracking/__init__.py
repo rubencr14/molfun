@@ -25,8 +25,8 @@ Quick start::
 """
 
 from molfun.tracking.base import BaseTracker
-from molfun.tracking.console import ConsoleTracker
 from molfun.tracking.composite import CompositeTracker
+from molfun.tracking.console import ConsoleTracker
 from molfun.tracking.registry import ExperimentRegistry
 
 __all__ = [
@@ -40,18 +40,23 @@ __all__ = [
 def _lazy_import(name):
     if name == "WandbTracker":
         from molfun.tracking.wandb_tracker import WandbTracker
+
         return WandbTracker
     elif name == "CometTracker":
         from molfun.tracking.comet_tracker import CometTracker
+
         return CometTracker
     elif name == "MLflowTracker":
         from molfun.tracking.mlflow_tracker import MLflowTracker
+
         return MLflowTracker
     elif name == "LangfuseTracker":
         from molfun.tracking.langfuse_tracker import LangfuseTracker
+
         return LangfuseTracker
     elif name == "HuggingFaceTracker":
         from molfun.tracking.hf_tracker import HuggingFaceTracker
+
         return HuggingFaceTracker
     raise AttributeError(f"module 'molfun.tracking' has no attribute {name!r}")
 

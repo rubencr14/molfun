@@ -6,7 +6,7 @@ and as a fallback when no cloud tracker is configured.
 """
 
 from __future__ import annotations
-from typing import Optional
+
 import json
 import time
 
@@ -27,8 +27,8 @@ class ConsoleTracker(BaseTracker):
     def __init__(self, prefix: str = "[molfun]", verbose: bool = True):
         self.prefix = prefix
         self.verbose = verbose
-        self._run_name: Optional[str] = None
-        self._start_time: Optional[float] = None
+        self._run_name: str | None = None
+        self._start_time: float | None = None
 
     def start_run(self, name=None, tags=None, config=None):
         self._run_name = name or "unnamed"
@@ -42,8 +42,7 @@ class ConsoleTracker(BaseTracker):
     def log_metrics(self, metrics, step=None):
         if not self.verbose:
             return
-        parts = [f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}"
-                 for k, v in metrics.items()]
+        parts = [f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}" for k, v in metrics.items()]
         step_str = f" step={step}" if step is not None else ""
         print(f"{self.prefix}{step_str} {', '.join(parts)}")
 

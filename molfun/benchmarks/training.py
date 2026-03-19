@@ -21,8 +21,8 @@ Usage::
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Optional
 
 import torch
 from torch.utils.data import DataLoader
@@ -128,7 +128,9 @@ class ConvergenceBenchmark:
 
         t0 = time.perf_counter()
         history = self._strategy.fit(
-            self._model, self._train_loader, self._val_loader,
+            self._model,
+            self._train_loader,
+            self._val_loader,
             epochs=self._max_epochs,
         )
         total_time = time.perf_counter() - t0
@@ -219,6 +221,7 @@ class StrategyComparison:
 # ------------------------------------------------------------------
 # Internal
 # ------------------------------------------------------------------
+
 
 def _count_params(model) -> tuple[int, int]:
     """Return (trainable_params, total_params)."""

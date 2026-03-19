@@ -21,12 +21,14 @@ Usage::
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Callable, Optional
+
 import json
 import logging
 import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,7 @@ StepFn = Callable[[StateDict], StateDict]
 @dataclass
 class PipelineStep:
     """A single pipeline step: a callable + static config."""
+
     name: str
     fn: StepFn
     config: dict[str, Any] = field(default_factory=dict)
@@ -46,10 +49,11 @@ class PipelineStep:
 @dataclass
 class StepResult:
     """Outcome of a single step execution."""
+
     name: str
     elapsed_s: float
     skipped: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
 
 PIPELINE_TYPES = ("finetune", "train", "inference", "data", "custom")
@@ -74,8 +78,8 @@ class Pipeline:
         steps: list[PipelineStep],
         pipeline_type: str = "custom",
         model: str = "",
-        checkpoint_dir: Optional[str] = None,
-        hooks: Optional[dict[str, Callable]] = None,
+        checkpoint_dir: str | None = None,
+        hooks: dict[str, Callable] | None = None,
     ):
         self.steps = steps
         self.pipeline_type = pipeline_type
@@ -91,7 +95,7 @@ class Pipeline:
     # Public API
     # ------------------------------------------------------------------
 
-    def run(self, state: Optional[StateDict] = None) -> StateDict:
+    def run(self, state: StateDict | None = None) -> StateDict:
         """Execute all steps sequentially, passing state through each."""
         return self._run_from(0, state or {})
 
@@ -100,7 +104,7 @@ class Pipeline:
         idx = self._step_index(step_name)
         return self._run_from(idx, state)
 
-    def dry_run(self, state: Optional[StateDict] = None) -> list[str]:
+    def dry_run(self, state: StateDict | None = None) -> list[str]:
         """Return the names of steps that would execute (not skipped)."""
         return [s.name for s in self.steps if not s.skip]
 
@@ -247,12 +251,14 @@ class Pipeline:
                 config.setdefault("model_name", model)
             if overrides:
                 config = {**config, **overrides}
-            steps.append(PipelineStep(
-                name=entry["name"],
-                fn=fn,
-                config=config,
-                skip=entry.get("skip", False),
-            ))
+            steps.append(
+                PipelineStep(
+                    name=entry["name"],
+                    fn=fn,
+                    config=config,
+                    skip=entry.get("skip", False),
+                )
+            )
 
         return cls(
             steps=steps,
@@ -268,6 +274,7 @@ def _import_callable(dotted_path: str) -> Callable:
     if not module_path:
         raise ValueError(f"Invalid callable path: {dotted_path}")
     import importlib
+
     module = importlib.import_module(module_path)
     fn = getattr(module, func_name, None)
     if fn is None:

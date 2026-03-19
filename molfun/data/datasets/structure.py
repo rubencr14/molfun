@@ -8,15 +8,15 @@ Supports:
 """
 
 from __future__ import annotations
-from pathlib import Path
-from typing import Optional, Callable
+
 import pickle
+from collections.abc import Callable
+from pathlib import Path
 
 import torch
 from torch.utils.data import Dataset
 
-from molfun.data.parsers import auto_parser, PDBParser
-from molfun.data.parsers.residue import THREE_TO_ONE
+from molfun.data.parsers import PDBParser, auto_parser
 
 
 class StructureDataset(Dataset):
@@ -46,12 +46,12 @@ class StructureDataset(Dataset):
     def __init__(
         self,
         pdb_paths: list[str | Path],
-        labels: Optional[dict[str, float]] = None,
+        labels: dict[str, float] | None = None,
         featurizer=None,
-        features_dir: Optional[str | Path] = None,
+        features_dir: str | Path | None = None,
         msa_provider=None,
         max_seq_len: int = 512,
-        transform: Optional[Callable] = None,
+        transform: Callable | None = None,
     ):
         self.paths = [Path(p) for p in pdb_paths]
         self.labels = labels or {}
@@ -126,7 +126,8 @@ class StructureDataset(Dataset):
         if ext not in self._parser_cache:
             try:
                 self._parser_cache[ext] = auto_parser(
-                    str(path), max_seq_len=self.max_seq_len,
+                    str(path),
+                    max_seq_len=self.max_seq_len,
                 )
             except ValueError:
                 self._parser_cache[ext] = PDBParser(max_seq_len=self.max_seq_len)

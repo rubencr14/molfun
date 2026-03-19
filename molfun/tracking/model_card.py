@@ -6,16 +6,16 @@ Produces a README.md in the HF model card format with metadata
 """
 
 from __future__ import annotations
-from typing import Optional
+
 from datetime import datetime
 
 
 def generate_model_card(
     model_summary: dict,
-    metrics: Optional[dict] = None,
-    dataset_name: Optional[str] = None,
-    objective: Optional[str] = None,
-    tags: Optional[list[str]] = None,
+    metrics: dict | None = None,
+    dataset_name: str | None = None,
+    objective: str | None = None,
+    tags: list[str] | None = None,
 ) -> str:
     """
     Generate a Hugging Face model card markdown string.
@@ -64,8 +64,10 @@ def generate_model_card(
         sections.append(f"> {objective}")
         sections.append("")
 
-    sections.append("This model was trained with [Molfun](https://github.com/rubencr14/molfun), "
-                     "a modular framework for fine-tuning molecular ML models.")
+    sections.append(
+        "This model was trained with [Molfun](https://github.com/rubencr14/molfun), "
+        "a modular framework for fine-tuning molecular ML models."
+    )
     sections.append("")
 
     # Architecture
@@ -88,8 +90,7 @@ def generate_model_card(
 
     peft = model_summary.get("peft", {})
     if peft:
-        sections.append(f"- **PEFT**: rank={peft.get('rank', '?')}, "
-                         f"alpha={peft.get('alpha', '?')}")
+        sections.append(f"- **PEFT**: rank={peft.get('rank', '?')}, alpha={peft.get('alpha', '?')}")
 
     sections.append("")
 
@@ -109,7 +110,7 @@ def generate_model_card(
     sections.append("```python")
     sections.append("from molfun.models.structure import MolfunStructureModel")
     sections.append("")
-    sections.append("model = MolfunStructureModel.from_hub(\"<REPO_ID>\")")
+    sections.append('model = MolfunStructureModel.from_hub("<REPO_ID>")')
     sections.append("output = model.predict(batch)")
     sections.append("```")
     sections.append("")

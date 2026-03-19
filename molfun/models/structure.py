@@ -33,18 +33,19 @@ Usage:
 """
 
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from molfun.adapters.base import BaseAdapter
-from molfun.training.peft import MolfunPEFT
+from molfun.core.types import TrunkOutput
 from molfun.heads.affinity import AffinityHead
 from molfun.heads.structure import StructureLossHead
-from molfun.core.types import TrunkOutput
+from molfun.training.peft import MolfunPEFT
 
 if TYPE_CHECKING:
     from molfun.training.base import FinetuneStrategy
@@ -62,6 +63,7 @@ def _register_adapters():
     if ADAPTER_REGISTRY:
         return
     from molfun.backends.openfold.adapter import OpenFoldAdapter
+
     ADAPTER_REGISTRY["openfold"] = OpenFoldAdapter
 
 
@@ -80,12 +82,12 @@ class MolfunStructureModel:
     def __init__(
         self,
         name: str,
-        model: Optional[nn.Module] = None,
-        config: Optional[object] = None,
-        weights: Optional[str] = None,
+        model: nn.Module | None = None,
+        config: object | None = None,
+        weights: str | None = None,
         device: str = "cuda",
-        head: Optional[str] = None,
-        head_config: Optional[dict] = None,
+        head: str | None = None,
+        head_config: dict | None = None,
     ):
         """
         Args:
@@ -104,19 +106,20 @@ class MolfunStructureModel:
 
         adapter_cls = ADAPTER_REGISTRY.get(name)
         if adapter_cls is None:
-            raise ValueError(
-                f"Unknown model '{name}'. Available: {list(ADAPTER_REGISTRY)}"
-            )
+            raise ValueError(f"Unknown model '{name}'. Available: {list(ADAPTER_REGISTRY)}")
         self.adapter: BaseAdapter = adapter_cls(
-            model=model, config=config, weights_path=weights, device=device,
+            model=model,
+            config=config,
+            weights_path=weights,
+            device=device,
         )
 
-        self._peft: Optional[MolfunPEFT] = None
-        self._strategy: Optional[FinetuneStrategy] = None
+        self._peft: MolfunPEFT | None = None
+        self._strategy: FinetuneStrategy | None = None
 
         self._config = config
 
-        self.head: Optional[nn.Module] = None
+        self.head: nn.Module | None = None
         if head:
             self.head = self._build_head(head, head_config or {})
 
@@ -151,11 +154,11 @@ class MolfunStructureModel:
         cls,
         name: str = "openfold",
         device: str = "cpu",
-        head: Optional[str] = None,
-        head_config: Optional[dict] = None,
-        cache_dir: Optional[str] = None,
+        head: str | None = None,
+        head_config: dict | None = None,
+        cache_dir: str | None = None,
         force_download: bool = False,
-    ) -> "MolfunStructureModel":
+    ) -> MolfunStructureModel:
         """
         Load a pretrained model with automatic weight download.
 
@@ -178,17 +181,17 @@ class MolfunStructureModel:
             model = MolfunStructureModel.from_pretrained("openfold")
             output = model.predict("MKWVTFISLLLLFSSAYS")
         """
-        from molfun.hub.registry import download_weights, get_config, PRETRAINED_REGISTRY
+        from molfun.hub.registry import PRETRAINED_REGISTRY, download_weights, get_config
 
         if name not in PRETRAINED_REGISTRY:
             available = ", ".join(sorted(PRETRAINED_REGISTRY.keys()))
-            raise ValueError(
-                f"Unknown pretrained model '{name}'. Available: {available}"
-            )
+            raise ValueError(f"Unknown pretrained model '{name}'. Available: {available}")
 
         spec = PRETRAINED_REGISTRY[name]
         weights_path = download_weights(
-            name, force=force_download, cache_dir=cache_dir,
+            name,
+            force=force_download,
+            cache_dir=cache_dir,
         )
         config = get_config(name)
 
@@ -239,8 +242,7 @@ class MolfunStructureModel:
     def _featurize_sequence(self, sequence: str) -> dict:
         """Convert a raw amino acid sequence to a model-ready feature dict."""
         if self.name == "openfold" or (
-            hasattr(self, 'adapter') and
-            type(self.adapter).__name__ == "OpenFoldAdapter"
+            hasattr(self, "adapter") and type(self.adapter).__name__ == "OpenFoldAdapter"
         ):
             return self._featurize_openfold(sequence)
         raise NotImplementedError(
@@ -312,15 +314,23 @@ class MolfunStructureModel:
         # prebuilt tables of shape (21, 14) and (21, 37) indexed by aatype.
         aa_idx = aatype.clamp(max=20).long()
 
-        atom14_to_atom37_table = torch.tensor(rc.RESTYPE_ATOM14_TO_ATOM37, dtype=torch.long)  # (21,14)
-        atom37_to_atom14_table = torch.tensor(rc.RESTYPE_ATOM37_TO_ATOM14, dtype=torch.long)  # (21,37)
-        atom14_mask_table      = torch.tensor(rc.restype_atom14_mask,       dtype=torch.float32)  # (21,14)
-        atom37_mask_table      = torch.tensor(rc.RESTYPE_ATOM14_MASK if hasattr(rc, "RESTYPE_ATOM14_MASK")
-                                               else rc.restype_atom14_mask,  dtype=torch.float32)
+        atom14_to_atom37_table = torch.tensor(
+            rc.RESTYPE_ATOM14_TO_ATOM37, dtype=torch.long
+        )  # (21,14)
+        atom37_to_atom14_table = torch.tensor(
+            rc.RESTYPE_ATOM37_TO_ATOM14, dtype=torch.long
+        )  # (21,37)
+        atom14_mask_table = torch.tensor(rc.restype_atom14_mask, dtype=torch.float32)  # (21,14)
+        torch.tensor(
+            rc.RESTYPE_ATOM14_MASK
+            if hasattr(rc, "RESTYPE_ATOM14_MASK")
+            else rc.restype_atom14_mask,
+            dtype=torch.float32,
+        )
 
-        residx_atom14_to_atom37 = atom14_to_atom37_table[aa_idx]   # (L, 14)
-        residx_atom37_to_atom14 = atom37_to_atom14_table[aa_idx]   # (L, 37)
-        atom14_atom_exists      = atom14_mask_table[aa_idx]         # (L, 14)
+        residx_atom14_to_atom37 = atom14_to_atom37_table[aa_idx]  # (L, 14)
+        residx_atom37_to_atom14 = atom37_to_atom14_table[aa_idx]  # (L, 37)
+        atom14_atom_exists = atom14_mask_table[aa_idx]  # (L, 14)
 
         # atom37_atom_exists: mark atom37 slots that exist for each residue
         atom37_atom_exists = torch.zeros(L, 37, dtype=torch.float32)
@@ -331,12 +341,14 @@ class MolfunStructureModel:
                     if a37 >= 0:
                         atom37_atom_exists[i, a37] = 1.0
 
-        batch.update({
-            "residx_atom14_to_atom37": residx_atom14_to_atom37,
-            "residx_atom37_to_atom14": residx_atom37_to_atom14,
-            "atom14_atom_exists": atom14_atom_exists,
-            "atom37_atom_exists": atom37_atom_exists,
-        })
+        batch.update(
+            {
+                "residx_atom14_to_atom37": residx_atom14_to_atom37,
+                "residx_atom37_to_atom14": residx_atom37_to_atom14,
+                "atom14_atom_exists": atom14_atom_exists,
+                "atom37_atom_exists": atom37_atom_exists,
+            }
+        )
 
         skip_recycle = {"seq_length"}
         for k, v in batch.items():
@@ -344,12 +356,11 @@ class MolfunStructureModel:
                 batch[k] = v.unsqueeze(-1)
 
         device = torch.device(self.device)
-        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v
-                 for k, v in batch.items()}
+        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
         return batch
 
-    def forward(self, batch: dict, mask: Optional[torch.Tensor] = None) -> dict:
+    def forward(self, batch: dict, mask: torch.Tensor | None = None) -> dict:
         """
         Full forward: adapter → head.
 
@@ -369,14 +380,14 @@ class MolfunStructureModel:
     def fit(
         self,
         train_loader: DataLoader,
-        val_loader: Optional[DataLoader] = None,
-        strategy: Optional[FinetuneStrategy] = None,
+        val_loader: DataLoader | None = None,
+        strategy: FinetuneStrategy | None = None,
         epochs: int = 10,
         gradient_checkpointing: bool = False,
         tracker=None,
-        checkpoint_dir: Optional[str] = None,
+        checkpoint_dir: str | None = None,
         save_every: int = 0,
-        resume_from: Optional[str] = None,
+        resume_from: str | None = None,
     ) -> list[dict]:
         """
         Fine-tune the model using the given strategy.
@@ -398,15 +409,14 @@ class MolfunStructureModel:
         if strategy is not None:
             self._strategy = strategy
         if self._strategy is None:
-            raise RuntimeError(
-                "No strategy provided. Pass e.g. strategy=HeadOnlyFinetune(lr=1e-3)"
-            )
+            raise RuntimeError("No strategy provided. Pass e.g. strategy=HeadOnlyFinetune(lr=1e-3)")
         if self.head is None:
-            raise RuntimeError(
-                "No head configured. Pass head='affinity' or head='structure'."
-            )
+            raise RuntimeError("No head configured. Pass head='affinity' or head='structure'.")
         return self._strategy.fit(
-            self, train_loader, val_loader, epochs,
+            self,
+            train_loader,
+            val_loader,
+            epochs,
             gradient_checkpointing=gradient_checkpointing,
             tracker=tracker,
             checkpoint_dir=checkpoint_dir,
@@ -479,9 +489,9 @@ class MolfunStructureModel:
         cls,
         adapter: BaseAdapter,
         device: str = "cuda",
-        head: Optional[str] = None,
-        head_config: Optional[dict] = None,
-    ) -> "MolfunStructureModel":
+        head: str | None = None,
+        head_config: dict | None = None,
+    ) -> MolfunStructureModel:
         """
         Create a MolfunStructureModel from a custom adapter (e.g. BuiltModel).
 
@@ -542,10 +552,13 @@ class MolfunStructureModel:
             model.swap("structure_module", DiffusionStructureModule(...))
         """
         from molfun.modules.swapper import ModuleSwapper
-        target = self.adapter if hasattr(self.adapter, 'model') else self.adapter
-        actual_model = getattr(target, 'model', target)
+
+        target = self.adapter if hasattr(self.adapter, "model") else self.adapter
+        actual_model = getattr(target, "model", target)
         return ModuleSwapper.swap(
-            actual_model, target_path, new_module,
+            actual_model,
+            target_path,
+            new_module,
             transfer_weights=transfer_weights,
         )
 
@@ -567,18 +580,22 @@ class MolfunStructureModel:
             Number of modules swapped.
         """
         from molfun.modules.swapper import ModuleSwapper
-        target = self.adapter if hasattr(self.adapter, 'model') else self.adapter
-        actual_model = getattr(target, 'model', target)
+
+        target = self.adapter if hasattr(self.adapter, "model") else self.adapter
+        actual_model = getattr(target, "model", target)
         return ModuleSwapper.swap_all(
-            actual_model, pattern, factory,
+            actual_model,
+            pattern,
+            factory,
             transfer_weights=transfer_weights,
         )
 
-    def discover_modules(self, pattern: Optional[str] = None) -> list[tuple[str, nn.Module]]:
+    def discover_modules(self, pattern: str | None = None) -> list[tuple[str, nn.Module]]:
         """List swappable modules inside the model."""
         from molfun.modules.swapper import ModuleSwapper
-        target = self.adapter if hasattr(self.adapter, 'model') else self.adapter
-        actual_model = getattr(target, 'model', target)
+
+        target = self.adapter if hasattr(self.adapter, "model") else self.adapter
+        actual_model = getattr(target, "model", target)
         return ModuleSwapper.discover(actual_model, pattern=pattern)
 
     # ------------------------------------------------------------------
@@ -588,10 +605,10 @@ class MolfunStructureModel:
     def push_to_hub(
         self,
         repo_id: str,
-        token: Optional[str] = None,
+        token: str | None = None,
         private: bool = False,
-        metrics: Optional[dict] = None,
-        dataset_name: Optional[str] = None,
+        metrics: dict | None = None,
+        dataset_name: str | None = None,
         commit_message: str = "Upload Molfun model",
     ) -> str:
         """
@@ -618,7 +635,9 @@ class MolfunStructureModel:
         from molfun.tracking.model_card import generate_model_card
 
         tracker = HuggingFaceTracker(
-            repo_id=repo_id, token=token, private=private,
+            repo_id=repo_id,
+            token=token,
+            private=private,
         )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -642,12 +661,12 @@ class MolfunStructureModel:
     def from_hub(
         cls,
         repo_id: str,
-        token: Optional[str] = None,
-        revision: Optional[str] = None,
+        token: str | None = None,
+        revision: str | None = None,
         device: str = "cpu",
-        head: Optional[str] = None,
-        head_config: Optional[dict] = None,
-    ) -> "MolfunStructureModel":
+        head: str | None = None,
+        head_config: dict | None = None,
+    ) -> MolfunStructureModel:
         """
         Download and load a model from Hugging Face Hub.
 
@@ -672,6 +691,7 @@ class MolfunStructureModel:
         tracker = HuggingFaceTracker(repo_id=repo_id, token=token)
 
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmp:
             local_dir = tracker.download_repo(tmp, revision=revision)
             ckpt_dir = Path(local_dir) / "checkpoint"
@@ -693,8 +713,10 @@ class MolfunStructureModel:
                 )
 
             instance = cls(
-                name=name, device=device,
-                head=head, head_config=head_config,
+                name=name,
+                device=device,
+                head=head,
+                head_config=head_config,
             )
             instance.load(str(ckpt_dir))
 
@@ -731,9 +753,14 @@ class MolfunStructureModel:
             Path to the exported file.
         """
         from molfun.export.onnx import export_onnx
+
         return export_onnx(
-            self, path, seq_len=seq_len,
-            opset_version=opset_version, simplify=simplify, device=device,
+            self,
+            path,
+            seq_len=seq_len,
+            opset_version=opset_version,
+            simplify=simplify,
+            device=device,
         )
 
     def export_torchscript(
@@ -763,9 +790,14 @@ class MolfunStructureModel:
             Path to the exported file.
         """
         from molfun.export.torchscript import export_torchscript
+
         return export_torchscript(
-            self, path, seq_len=seq_len,
-            mode=mode, optimize=optimize, device=device,
+            self,
+            path,
+            seq_len=seq_len,
+            mode=mode,
+            optimize=optimize,
+            device=device,
         )
 
     # ------------------------------------------------------------------
@@ -775,7 +807,7 @@ class MolfunStructureModel:
     @staticmethod
     def example_dataset(
         name: str = "globins-small",
-        cache_dir: Optional[str] = None,
+        cache_dir: str | None = None,
     ) -> list[str]:
         """
         Fetch a small example dataset for quick experimentation.
@@ -811,9 +843,7 @@ class MolfunStructureModel:
 
         if name not in examples:
             available = ", ".join(sorted(examples.keys()))
-            raise ValueError(
-                f"Unknown example dataset '{name}'. Available: {available}"
-            )
+            raise ValueError(f"Unknown example dataset '{name}'. Available: {available}")
 
         spec = examples[name]
         base = Path(cache_dir) if cache_dir else Path.home() / ".molfun" / "examples"
@@ -825,6 +855,7 @@ class MolfunStructureModel:
             return [str(p) for p in sorted(existing)]
 
         from molfun.data.collections import fetch_collection
+
         paths = fetch_collection(
             spec["collection"],
             max_structures=spec["limit"],
@@ -849,4 +880,5 @@ class MolfunStructureModel:
     def available_pretrained() -> list[str]:
         """List available pretrained model names for from_pretrained()."""
         from molfun.hub.registry import PRETRAINED_REGISTRY
+
         return list(PRETRAINED_REGISTRY.keys())

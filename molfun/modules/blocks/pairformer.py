@@ -14,15 +14,12 @@ Architecture per block:
 """
 
 from __future__ import annotations
-from typing import Optional
-import math
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from molfun.modules.blocks.base import BaseBlock, BlockOutput, BLOCK_REGISTRY
 from molfun.modules.attention.base import ATTENTION_REGISTRY
+from molfun.modules.blocks.base import BLOCK_REGISTRY, BaseBlock, BlockOutput
 
 
 @BLOCK_REGISTRY.register("pairformer")
@@ -42,7 +39,7 @@ class PairformerBlock(BaseBlock):
         n_heads: int = 8,
         n_heads_pair: int = 4,
         dropout: float = 0.0,
-        attention_cls: Optional[str] = None,
+        attention_cls: str | None = None,
         **kwargs,
     ):
         super().__init__()
@@ -96,7 +93,9 @@ class PairformerBlock(BaseBlock):
         # Pair transition
         self.pair_ff_norm = nn.LayerNorm(d_pair)
         self.pair_ff = nn.Sequential(
-            nn.Linear(d_pair, d_pair * 4), nn.SiLU(), nn.Linear(d_pair * 4, d_pair),
+            nn.Linear(d_pair, d_pair * 4),
+            nn.SiLU(),
+            nn.Linear(d_pair * 4, d_pair),
         )
 
         self.drop = nn.Dropout(dropout)
@@ -104,9 +103,9 @@ class PairformerBlock(BaseBlock):
     def forward(
         self,
         single: torch.Tensor,
-        pair: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
-        pair_mask: Optional[torch.Tensor] = None,
+        pair: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
+        pair_mask: torch.Tensor | None = None,
     ) -> BlockOutput:
         assert pair is not None, "PairformerBlock requires pair representation"
         B, L, D = single.shape

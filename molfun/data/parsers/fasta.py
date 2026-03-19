@@ -53,8 +53,8 @@ class FASTAParser(BaseAlignmentParser):
         if not sequences:
             raise ValueError("Empty FASTA: no sequences found.")
 
-        sequences = sequences[:self.max_depth]
-        headers = headers[:self.max_depth]
+        sequences = sequences[: self.max_depth]
+        headers = headers[: self.max_depth]
 
         max_len = max(len(s) for s in sequences)
 

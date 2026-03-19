@@ -6,6 +6,7 @@ where overfitting the trunk is a risk.
 """
 
 from __future__ import annotations
+
 from molfun.training.base import FinetuneStrategy
 
 

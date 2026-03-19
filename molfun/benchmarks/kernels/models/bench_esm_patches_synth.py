@@ -28,20 +28,22 @@ Required kernels in repo:
 
 import argparse
 import types
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import List, Dict, Tuple, Any, Callable
+from typing import Any
 
 import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, EsmModel
 
+from molfun.kernels.models.fused_linear_bias_residual_triton import (
+    fused_linear_bias_residual_triton,
+)
 from molfun.kernels.models.fused_linear_gelu_triton import fused_linear_gelu_triton
-from molfun.kernels.models.fused_linear_bias_residual_triton import fused_linear_bias_residual_triton
 from molfun.kernels.models.layernorm_triton import layernorm_triton
 
-
-
 # -------------------------- Config --------------------------
+
 
 @dataclass
 class BenchCfg:
@@ -53,6 +55,7 @@ class BenchCfg:
 
 
 # -------------------------- Timing --------------------------
+
 
 def time_it_cuda(fn: Callable[[], torch.Tensor], iters: int, warmup: int) -> float:
     # Warmup (important: triggers Triton JIT/autotune in patched mode)
@@ -75,18 +78,20 @@ def time_it_cuda(fn: Callable[[], torch.Tensor], iters: int, warmup: int) -> flo
 
 # -------------------------- Synthetic inputs --------------------------
 
-def make_protein_like_sequences(batch_size: int, seq_len: int) -> List[str]:
+
+def make_protein_like_sequences(batch_size: int, seq_len: int) -> list[str]:
     alphabet = "ACDEFGHIKLMNPQRSTVWY"  # 20 canonical amino acids
     seq = (alphabet * ((seq_len // len(alphabet)) + 1))[:seq_len]
     return [seq for _ in range(batch_size)]
 
 
 @torch.inference_mode()
-def forward_last_hidden(model: EsmModel, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+def forward_last_hidden(model: EsmModel, batch: dict[str, torch.Tensor]) -> torch.Tensor:
     return model(**batch).last_hidden_state
 
 
 # -------------------------- Patches --------------------------
+
 
 def patch_mlp1_fused(model: EsmModel):
     """
@@ -105,6 +110,7 @@ def patch_mlp1_fused(model: EsmModel):
                 w = intermediate_module.dense.weight
                 b = intermediate_module.dense.bias
                 return fused_linear_gelu_triton(hidden_states, w, b)
+
             return new_forward
 
         intermediate.forward = types.MethodType(make_new_forward(intermediate), intermediate)
@@ -138,6 +144,7 @@ def patch_mlp12_fused(model: EsmModel):
                 w1 = intermediate_module.dense.weight
                 b1 = intermediate_module.dense.bias
                 return fused_linear_gelu_triton(hidden_states, w1, b1)
+
             return new_intermediate_forward
 
         intermediate.forward = types.MethodType(make_inter_forward(intermediate), intermediate)
@@ -156,6 +163,7 @@ def patch_mlp12_fused(model: EsmModel):
                 if hasattr(output_module, "LayerNorm") and output_module.LayerNorm is not None:
                     y = output_module.LayerNorm(y)
                 return y
+
             return new_output_forward
 
         output.forward = types.MethodType(make_out_forward(output), output)
@@ -174,7 +182,7 @@ def patch_layernorm_triton_encoder(model: EsmModel):
     Patch ALL nn.LayerNorm modules inside encoder layers to call layernorm_triton.
     Returns list of (module, original_forward).
     """
-    originals: List[Tuple[nn.LayerNorm, Callable]] = []
+    originals: list[tuple[nn.LayerNorm, Callable]] = []
 
     for layer in model.encoder.layer:
         for mod in layer.modules():
@@ -183,7 +191,10 @@ def patch_layernorm_triton_encoder(model: EsmModel):
 
                 def make_ln_forward(ln_module: nn.LayerNorm):
                     def new_ln_forward(self_ln, x):
-                        return layernorm_triton(x, ln_module.weight, ln_module.bias, eps=float(ln_module.eps))
+                        return layernorm_triton(
+                            x, ln_module.weight, ln_module.bias, eps=float(ln_module.eps)
+                        )
+
                     return new_ln_forward
 
                 mod.forward = types.MethodType(make_ln_forward(mod), mod)
@@ -198,12 +209,13 @@ def unpatch_layernorm(originals):
 
 # -------------------------- Runner --------------------------
 
+
 def apply_patch_mode(model: EsmModel, mode: str):
     """
     Apply selected patch mode. Returns a callable "restore()" that unpatches everything applied.
     Modes: baseline, mlp1, mlp12, ln, mlp12_ln
     """
-    restores: List[Callable[[], None]] = []
+    restores: list[Callable[[], None]] = []
 
     if mode == "baseline":
         return lambda: None
@@ -235,11 +247,11 @@ def apply_patch_mode(model: EsmModel, mode: str):
     raise ValueError(f"Unknown mode: {mode}")
 
 
-def parse_cases(s: str) -> List[Tuple[int, int]]:
+def parse_cases(s: str) -> list[tuple[int, int]]:
     """
     Format: "1,256;1,512;2,1024"
     """
-    out: List[Tuple[int, int]] = []
+    out: list[tuple[int, int]] = []
     for part in s.split(";"):
         part = part.strip()
         if not part:
@@ -249,14 +261,14 @@ def parse_cases(s: str) -> List[Tuple[int, int]]:
     return out
 
 
-def run_benchmark(cfg: BenchCfg, cases: List[Tuple[int, int]], mode: str) -> List[Dict[str, Any]]:
+def run_benchmark(cfg: BenchCfg, cases: list[tuple[int, int]], mode: str) -> list[dict[str, Any]]:
     assert torch.cuda.is_available(), "CUDA required"
     torch.set_grad_enabled(False)
 
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_id, do_lower_case=False)
     model = EsmModel.from_pretrained(cfg.model_id).to(cfg.device).eval().to(cfg.dtype)
 
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
 
     for B, L in cases:
         seqs = make_protein_like_sequences(B, L)
@@ -291,32 +303,34 @@ def run_benchmark(cfg: BenchCfg, cases: List[Tuple[int, int]], mode: str) -> Lis
         tok_per_s_base = tokens / (t_base / 1e3)
         tok_per_s_pat = tokens / (t_pat / 1e3)
 
-        results.append({
-            "benchmark_name": "esm_patches_synth",
-            "case_name": f"B={B}_L={L}",
-            "baseline_time_ms": round(t_base, 3),
-            "triton_time_ms": round(t_pat, 3),
-            "speedup": round(speedup, 2) if speedup != float("inf") else None,
-            "max_diff": max_abs,
-            "mean_diff": mean_abs,
-            "metadata": {
-                "B": B,
-                "L": L,
-                "tokens": tokens,
-                "tokens_per_sec_baseline": round(tok_per_s_base, 0),
-                "tokens_per_sec_patched": round(tok_per_s_pat, 0),
-                "model_id": cfg.model_id,
-                "dtype": str(cfg.dtype),
-                "device": cfg.device,
-                "mode": mode,
+        results.append(
+            {
+                "benchmark_name": "esm_patches_synth",
+                "case_name": f"B={B}_L={L}",
+                "baseline_time_ms": round(t_base, 3),
+                "triton_time_ms": round(t_pat, 3),
+                "speedup": round(speedup, 2) if speedup != float("inf") else None,
+                "max_diff": max_abs,
+                "mean_diff": mean_abs,
+                "metadata": {
+                    "B": B,
+                    "L": L,
+                    "tokens": tokens,
+                    "tokens_per_sec_baseline": round(tok_per_s_base, 0),
+                    "tokens_per_sec_patched": round(tok_per_s_pat, 0),
+                    "model_id": cfg.model_id,
+                    "dtype": str(cfg.dtype),
+                    "device": cfg.device,
+                    "mode": mode,
+                },
             }
-        })
+        )
 
     return results
 
 
 # Wrapper function for API compatibility (no arguments)
-def run_benchmark_api() -> List[Dict[str, Any]]:
+def run_benchmark_api() -> list[dict[str, Any]]:
     """Wrapper function for API compatibility - uses default values"""
     cfg = BenchCfg()
     cases = parse_cases("1,256;1,512;1,1024;2,512;2,1024;4,512;4,1024;8,512")
@@ -327,12 +341,18 @@ def run_benchmark_api() -> List[Dict[str, Any]]:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_id", type=str, default="facebook/esm2_t30_150M_UR50D")
-    parser.add_argument("--mode", type=str, default="mlp12_ln",
-                        choices=["baseline", "mlp1", "mlp12", "ln", "mlp12_ln"])
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="mlp12_ln",
+        choices=["baseline", "mlp1", "mlp12", "ln", "mlp12_ln"],
+    )
     parser.add_argument("--dtype", type=str, default="fp16", choices=["fp16", "bf16"])
     parser.add_argument("--iters", type=int, default=50)
     parser.add_argument("--warmup", type=int, default=10)
-    parser.add_argument("--cases", type=str, default="1,256;1,512;1,1024;2,512;2,1024;4,512;4,1024;8,512")
+    parser.add_argument(
+        "--cases", type=str, default="1,256;1,512;1,1024;2,512;2,1024;4,512;4,1024;8,512"
+    )
     args = parser.parse_args()
 
     cfg = BenchCfg(
@@ -353,8 +373,12 @@ def main():
     for r in results:
         meta = r["metadata"]
         print(f"B={meta['B']} L={meta['L']} | tokens={meta['tokens']}")
-        print(f"  baseline: {r['baseline_time_ms']:.3f} ms/iter  ({meta['tokens_per_sec_baseline']:,.0f} tokens/s)")
-        print(f"  patched : {r['triton_time_ms']:.3f} ms/iter  ({meta['tokens_per_sec_patched']:,.0f} tokens/s)")
+        print(
+            f"  baseline: {r['baseline_time_ms']:.3f} ms/iter  ({meta['tokens_per_sec_baseline']:,.0f} tokens/s)"
+        )
+        print(
+            f"  patched : {r['triton_time_ms']:.3f} ms/iter  ({meta['tokens_per_sec_patched']:,.0f} tokens/s)"
+        )
         print(f"  speedup : {r['speedup']:.2f}x" if r["speedup"] else "  speedup : inf")
         print(f"  max|diff|: {r['max_diff']:.3e}  mean|diff|: {r['mean_diff']:.3e}\n")
 

@@ -11,9 +11,9 @@ The interface supports three paradigms:
 """
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -26,8 +26,9 @@ BLOCK_REGISTRY = ModuleRegistry("block")
 @dataclass
 class BlockOutput:
     """Standardized output from a trunk block."""
-    single: Optional[torch.Tensor] = None   # [B, L, D_s] or [B, N, L, D_m]
-    pair: Optional[torch.Tensor] = None      # [B, L, L, D_p]
+
+    single: torch.Tensor | None = None  # [B, L, D_s] or [B, N, L, D_m]
+    pair: torch.Tensor | None = None  # [B, L, L, D_p]
 
 
 class BaseBlock(ABC, nn.Module):
@@ -43,9 +44,9 @@ class BaseBlock(ABC, nn.Module):
     def forward(
         self,
         single: torch.Tensor,
-        pair: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
-        pair_mask: Optional[torch.Tensor] = None,
+        pair: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
+        pair_mask: torch.Tensor | None = None,
     ) -> BlockOutput:
         """
         Process representations through one block.

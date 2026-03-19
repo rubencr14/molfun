@@ -13,16 +13,14 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Optional
 
 import torch
 from torch import Tensor
 
-
 # ------------------------------------------------------------------
 # Abstract interface
 # ------------------------------------------------------------------
+
 
 class BaseMetric(ABC):
     """Interface for a single evaluation metric (Strategy pattern)."""
@@ -52,6 +50,7 @@ class BaseMetric(ABC):
 # Regression metrics
 # ------------------------------------------------------------------
 
+
 class MAE(BaseMetric):
     """Mean Absolute Error."""
 
@@ -62,7 +61,9 @@ class MAE(BaseMetric):
         self._count = 0
 
     def update(self, preds: Tensor, targets: Tensor, **ctx) -> None:
-        self._sum += (preds.detach().cpu().float() - targets.detach().cpu().float()).abs().sum().item()
+        self._sum += (
+            (preds.detach().cpu().float() - targets.detach().cpu().float()).abs().sum().item()
+        )
         self._count += preds.numel()
 
     def compute(self) -> dict[str, float]:
@@ -84,7 +85,7 @@ class RMSE(BaseMetric):
 
     def update(self, preds: Tensor, targets: Tensor, **ctx) -> None:
         diff = preds.detach().cpu().float() - targets.detach().cpu().float()
-        self._sum_sq += (diff ** 2).sum().item()
+        self._sum_sq += (diff**2).sum().item()
         self._count += preds.numel()
 
     def compute(self) -> dict[str, float]:
@@ -187,6 +188,7 @@ class R2(BaseMetric):
 # Classification metrics
 # ------------------------------------------------------------------
 
+
 class AUROC(BaseMetric):
     """Area Under Receiver Operating Characteristic (binary)."""
 
@@ -240,6 +242,7 @@ class AUPRC(BaseMetric):
 # ------------------------------------------------------------------
 # Structural quality metrics
 # ------------------------------------------------------------------
+
 
 class CoordRMSD(BaseMetric):
     """
@@ -355,7 +358,8 @@ class LDDT(BaseMetric):
 
         for i in range(p.shape[0]):
             score = _lddt_single(
-                p[i], t[i],
+                p[i],
+                t[i],
                 mask=mask[i] if mask is not None else None,
                 inclusion_radius=self._inclusion_radius,
                 thresholds=self._thresholds,
@@ -456,6 +460,7 @@ class DockingSuccess(BaseMetric):
 # Composite (collects multiple metrics behind one interface)
 # ------------------------------------------------------------------
 
+
 class MetricCollection:
     """
     Composite of multiple ``BaseMetric`` instances.
@@ -524,6 +529,7 @@ def create_metrics(names: list[str], **kwargs) -> MetricCollection:
 # Internal helpers
 # ------------------------------------------------------------------
 
+
 def _rank(x: Tensor) -> Tensor:
     """Assign fractional ranks (average of ties)."""
     order = x.argsort()
@@ -562,10 +568,10 @@ def _auprc(scores: Tensor, labels: Tensor) -> float:
 def _lddt_single(
     pred: Tensor,
     target: Tensor,
-    mask: Optional[Tensor],
+    mask: Tensor | None,
     inclusion_radius: float,
     thresholds: tuple[float, ...],
-) -> Optional[float]:
+) -> float | None:
     """Compute lDDT for a single structure pair."""
     if mask is not None:
         m = mask.bool()

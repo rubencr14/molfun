@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -68,6 +67,7 @@ class BaseDistributedStrategy(ABC):
 # ------------------------------------------------------------------
 # DDP
 # ------------------------------------------------------------------
+
 
 class DDPStrategy(BaseDistributedStrategy):
     """
@@ -166,6 +166,7 @@ class DDPStrategy(BaseDistributedStrategy):
 # FSDP
 # ------------------------------------------------------------------
 
+
 class FSDPStrategy(BaseDistributedStrategy):
     """
     Fully Sharded Data Parallel — shard parameters, gradients, and
@@ -190,7 +191,7 @@ class FSDPStrategy(BaseDistributedStrategy):
         self,
         backend: str = "nccl",
         sharding_strategy: str = "full",
-        mixed_precision: Optional[str] = None,
+        mixed_precision: str | None = None,
         cpu_offload: bool = False,
         activation_checkpointing: bool = False,
         auto_wrap_min_params: int = 100_000,
@@ -218,14 +219,17 @@ class FSDPStrategy(BaseDistributedStrategy):
         torch.cuda.set_device(rank)
 
     def wrap_model(self, model: nn.Module, device: torch.device) -> nn.Module:
+        import functools
+
+        from torch.distributed.fsdp import (
+            CPUOffload,
+            MixedPrecision,
+            ShardingStrategy,
+        )
         from torch.distributed.fsdp import (
             FullyShardedDataParallel as FSDP,
-            ShardingStrategy,
-            MixedPrecision,
-            CPUOffload,
         )
         from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
-        import functools
 
         sharding_map = {
             "full": ShardingStrategy.FULL_SHARD,
@@ -272,7 +276,10 @@ class FSDPStrategy(BaseDistributedStrategy):
 
     def wrap_loader(self, loader: DataLoader, rank: int, world_size: int) -> DataLoader:
         sampler = DistributedSampler(
-            loader.dataset, num_replicas=world_size, rank=rank, shuffle=True,
+            loader.dataset,
+            num_replicas=world_size,
+            rank=rank,
+            shuffle=True,
         )
         return DataLoader(
             loader.dataset,
@@ -301,10 +308,11 @@ class FSDPStrategy(BaseDistributedStrategy):
 # Launcher
 # ------------------------------------------------------------------
 
+
 def launch(
     fn,
     distributed: BaseDistributedStrategy,
-    world_size: Optional[int] = None,
+    world_size: int | None = None,
 ):
     """
     Launch a distributed training function across ``world_size`` processes.
@@ -338,6 +346,7 @@ def launch(
         distributed.cleanup()
     else:
         import torch.multiprocessing as mp
+
         mp.spawn(
             _worker,
             args=(world_size, fn, distributed),
@@ -359,6 +368,7 @@ def _worker(rank: int, world_size: int, fn, distributed: BaseDistributedStrategy
 # Internal: activation checkpointing for FSDP
 # ------------------------------------------------------------------
 
+
 def _apply_activation_checkpointing(model: nn.Module) -> None:
     """
     Apply gradient checkpointing to FSDP-wrapped submodules.
@@ -366,14 +376,12 @@ def _apply_activation_checkpointing(model: nn.Module) -> None:
     Targets common block types in protein ML models (Evoformer layers,
     Transformer blocks, etc.).
     """
-    from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-    from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 
     try:
         from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
-            checkpoint_wrapper,
-            CheckpointImpl,
+            CheckpointImpl,  # noqa: F401
             apply_activation_checkpointing,
+            checkpoint_wrapper,
         )
     except ImportError:
         return

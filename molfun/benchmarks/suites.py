@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 
 class TaskType(str, Enum):
@@ -44,7 +43,7 @@ class BenchmarkTask:
     split: str = "test"
     metrics: tuple[str, ...] = ("mae", "pearson")
     task_type: TaskType = TaskType.REGRESSION
-    max_samples: Optional[int] = None
+    max_samples: int | None = None
     description: str = ""
 
 

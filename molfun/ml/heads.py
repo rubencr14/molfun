@@ -27,14 +27,13 @@ Usage::
 """
 
 from __future__ import annotations
-from typing import Optional
-from pathlib import Path
-import numpy as np
 
+import numpy as np
 
 # ------------------------------------------------------------------
 # Embedding extraction (backbone-agnostic)
 # ------------------------------------------------------------------
+
 
 def extract_embeddings(
     pdb_paths: list[str],
@@ -61,9 +60,7 @@ def extract_embeddings(
     if backbone == "openfold":
         return _extract_openfold(pdb_paths, layer, pooling, device, batch_size)
     else:
-        raise ValueError(
-            f"Unknown backbone '{backbone}'. Available: 'openfold'"
-        )
+        raise ValueError(f"Unknown backbone '{backbone}'. Available: 'openfold'")
 
 
 def _extract_openfold(
@@ -86,7 +83,7 @@ def _extract_openfold(
 
     embeddings = []
     for i in range(0, len(pdb_paths), batch_size):
-        batch_paths = pdb_paths[i:i + batch_size]
+        batch_paths = pdb_paths[i : i + batch_size]
         for path in batch_paths:
             emb = adapter.embed(path, layer=layer)
             if pooling == "mean":
@@ -105,6 +102,7 @@ def _extract_openfold(
 # ------------------------------------------------------------------
 # PropertyHead
 # ------------------------------------------------------------------
+
 
 class PropertyHead:
     """
@@ -135,7 +133,7 @@ class PropertyHead:
         backbone: str = "openfold",
         head_type: str = "mlp",
         task: str = "regression",
-        hidden_dims: Optional[list[int]] = None,
+        hidden_dims: list[int] | None = None,
         layer: str = "last",
         pooling: str = "mean",
         device: str = "cpu",
@@ -157,7 +155,7 @@ class PropertyHead:
         self,
         pdb_paths: list[str],
         y,
-        embeddings: Optional[np.ndarray] = None,
+        embeddings: np.ndarray | None = None,
     ):
         """
         Fit the head on structure embeddings.
@@ -173,8 +171,10 @@ class PropertyHead:
         """
         if embeddings is None:
             embeddings = extract_embeddings(
-                pdb_paths, backbone=self.backbone,
-                layer=self.layer, pooling=self.pooling,
+                pdb_paths,
+                backbone=self.backbone,
+                layer=self.layer,
+                pooling=self.pooling,
                 device=self.device,
             )
 
@@ -186,8 +186,8 @@ class PropertyHead:
 
     def predict(
         self,
-        pdb_paths: Optional[list[str]] = None,
-        embeddings: Optional[np.ndarray] = None,
+        pdb_paths: list[str] | None = None,
+        embeddings: np.ndarray | None = None,
     ) -> np.ndarray:
         """
         Predict properties.
@@ -206,8 +206,10 @@ class PropertyHead:
             if pdb_paths is None:
                 raise ValueError("Provide pdb_paths or embeddings")
             embeddings = extract_embeddings(
-                pdb_paths, backbone=self.backbone,
-                layer=self.layer, pooling=self.pooling,
+                pdb_paths,
+                backbone=self.backbone,
+                layer=self.layer,
+                pooling=self.pooling,
                 device=self.device,
             )
 
@@ -220,19 +222,23 @@ class PropertyHead:
         elif self.head_type == "linear":
             if self.task == "classification":
                 from sklearn.linear_model import LogisticRegression
+
                 return LogisticRegression(max_iter=1000, **self.head_params)
             else:
                 from sklearn.linear_model import Ridge
+
                 return Ridge(**self.head_params)
         elif self.head_type == "rf":
             if self.task == "classification":
                 from sklearn.ensemble import RandomForestClassifier
+
                 return RandomForestClassifier(
                     n_estimators=self.head_params.pop("n_estimators", 500),
                     **self.head_params,
                 )
             else:
                 from sklearn.ensemble import RandomForestRegressor
+
                 return RandomForestRegressor(
                     n_estimators=self.head_params.pop("n_estimators", 500),
                     **self.head_params,
@@ -240,19 +246,19 @@ class PropertyHead:
         elif self.head_type == "svm":
             if self.task == "classification":
                 from sklearn.svm import SVC
+
                 return SVC(probability=True, **self.head_params)
             else:
                 from sklearn.svm import SVR
+
                 return SVR(**self.head_params)
         else:
             raise ValueError(
-                f"Unknown head_type '{self.head_type}'. "
-                "Available: 'mlp', 'linear', 'rf', 'svm'"
+                f"Unknown head_type '{self.head_type}'. Available: 'mlp', 'linear', 'rf', 'svm'"
             )
 
     def _build_mlp(self, input_dim: int):
         """Build a PyTorch MLP head."""
-        import torch
         import torch.nn as nn
 
         layers = []
@@ -270,6 +276,7 @@ class PropertyHead:
             self._fit_mlp(X, y)
         else:
             from sklearn.preprocessing import StandardScaler
+
             self._scaler = StandardScaler()
             X_scaled = self._scaler.fit_transform(X)
             self._head.fit(X_scaled, y)
@@ -278,7 +285,7 @@ class PropertyHead:
         """Train PyTorch MLP with early stopping."""
         import torch
         import torch.nn as nn
-        from torch.utils.data import TensorDataset, DataLoader
+        from torch.utils.data import DataLoader, TensorDataset
 
         device = torch.device(self.device)
         self._head = self._head.to(device)
@@ -293,7 +300,9 @@ class PropertyHead:
             criterion = nn.MSELoss()
 
         dataset = TensorDataset(X_t, y_t)
-        loader = DataLoader(dataset, batch_size=self.head_params.get("batch_size", 32), shuffle=True)
+        loader = DataLoader(
+            dataset, batch_size=self.head_params.get("batch_size", 32), shuffle=True
+        )
 
         lr = self.head_params.get("lr", 1e-3)
         epochs = self.head_params.get("epochs", 100)
@@ -319,6 +328,7 @@ class PropertyHead:
 
     def _predict_mlp(self, X: np.ndarray) -> np.ndarray:
         import torch
+
         device = torch.device(self.device)
         self._head.eval()
         with torch.no_grad():
@@ -341,9 +351,11 @@ class PropertyHead:
 
     def save(self, path: str) -> None:
         from molfun.ml.io import save_model
+
         save_model(self, path)
 
     @classmethod
     def load(cls, path: str):
         from molfun.ml.io import load_model
+
         return load_model(path)

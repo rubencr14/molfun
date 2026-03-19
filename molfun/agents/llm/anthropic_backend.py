@@ -8,7 +8,7 @@ Usage::
 """
 
 from __future__ import annotations
-from typing import Optional
+
 import json
 import os
 
@@ -20,11 +20,13 @@ def _convert_tools_to_anthropic(tools: list[dict]) -> list[dict]:
     converted = []
     for tool in tools:
         fn = tool.get("function", {})
-        converted.append({
-            "name": fn["name"],
-            "description": fn.get("description", ""),
-            "input_schema": fn.get("parameters", {"type": "object", "properties": {}}),
-        })
+        converted.append(
+            {
+                "name": fn["name"],
+                "description": fn.get("description", ""),
+                "input_schema": fn.get("parameters", {"type": "object", "properties": {}}),
+            }
+        )
     return converted
 
 
@@ -34,7 +36,7 @@ class AnthropicBackend(BaseLLM):
     def __init__(
         self,
         model: str = "claude-sonnet-4-20250514",
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         temperature: float = 0.3,
         max_tokens: int = 4096,
     ):
@@ -50,7 +52,7 @@ class AnthropicBackend(BaseLLM):
     def chat(
         self,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
+        tools: list[dict] | None = None,
     ) -> LLMResponse:
         system_msg = ""
         chat_messages = []
@@ -58,33 +60,41 @@ class AnthropicBackend(BaseLLM):
             if m["role"] == "system":
                 system_msg = m["content"]
             elif m["role"] == "tool":
-                chat_messages.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": m.get("tool_call_id", ""),
-                        "content": m["content"],
-                    }],
-                })
+                chat_messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": m.get("tool_call_id", ""),
+                                "content": m["content"],
+                            }
+                        ],
+                    }
+                )
             elif m["role"] == "assistant" and m.get("tool_calls"):
                 content = []
                 if m.get("content"):
                     content.append({"type": "text", "text": m["content"]})
                 for tc in m["tool_calls"]:
-                    content.append({
-                        "type": "tool_use",
-                        "id": tc["id"],
-                        "name": tc["function"]["name"],
-                        "input": json.loads(tc["function"]["arguments"])
-                               if isinstance(tc["function"]["arguments"], str)
-                               else tc["function"]["arguments"],
-                    })
+                    content.append(
+                        {
+                            "type": "tool_use",
+                            "id": tc["id"],
+                            "name": tc["function"]["name"],
+                            "input": json.loads(tc["function"]["arguments"])
+                            if isinstance(tc["function"]["arguments"], str)
+                            else tc["function"]["arguments"],
+                        }
+                    )
                 chat_messages.append({"role": "assistant", "content": content})
             else:
-                chat_messages.append({
-                    "role": m["role"],
-                    "content": m["content"],
-                })
+                chat_messages.append(
+                    {
+                        "role": m["role"],
+                        "content": m["content"],
+                    }
+                )
 
         kwargs = {
             "model": self.model,
@@ -111,11 +121,13 @@ class AnthropicBackend(BaseLLM):
             if block.type == "text":
                 text_parts.append(block.text)
             elif block.type == "tool_use":
-                tool_calls.append(ToolCall(
-                    id=block.id,
-                    name=block.name,
-                    arguments=block.input if isinstance(block.input, dict) else {},
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=block.id,
+                        name=block.name,
+                        arguments=block.input if isinstance(block.input, dict) else {},
+                    )
+                )
 
         return LLMResponse(
             text="\n".join(text_parts) if text_parts else None,

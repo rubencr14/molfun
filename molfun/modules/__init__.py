@@ -38,15 +38,14 @@ Registries
     PAIR_OP_REGISTRY            (extensible)
 """
 
-from molfun.modules.registry import ModuleRegistry
-from molfun.modules.swapper import ModuleSwapper
-from molfun.modules.builder import ModelBuilder
-
 from molfun.modules.attention import ATTENTION_REGISTRY
 from molfun.modules.blocks import BLOCK_REGISTRY
-from molfun.modules.structure_module import STRUCTURE_MODULE_REGISTRY
+from molfun.modules.builder import ModelBuilder
 from molfun.modules.embedders import EMBEDDER_REGISTRY
 from molfun.modules.pair_ops import PAIR_OP_REGISTRY
+from molfun.modules.registry import ModuleRegistry
+from molfun.modules.structure_module import STRUCTURE_MODULE_REGISTRY
+from molfun.modules.swapper import ModuleSwapper
 
 __all__ = [
     "ModuleRegistry",

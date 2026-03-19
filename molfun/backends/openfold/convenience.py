@@ -5,7 +5,7 @@ Thin alias for MolfunStructureModel(name="openfold", ...).
 """
 
 from __future__ import annotations
-from typing import Optional
+
 import torch.nn as nn
 
 from molfun.models.structure import MolfunStructureModel
@@ -22,12 +22,12 @@ class OpenFold(MolfunStructureModel):
 
     def __init__(
         self,
-        model: Optional[nn.Module] = None,
-        config: Optional[object] = None,
-        weights: Optional[str] = None,
+        model: nn.Module | None = None,
+        config: object | None = None,
+        weights: str | None = None,
         device: str = "cuda",
-        head: Optional[str] = None,
-        head_config: Optional[dict] = None,
+        head: str | None = None,
+        head_config: dict | None = None,
     ):
         super().__init__(
             name="openfold",

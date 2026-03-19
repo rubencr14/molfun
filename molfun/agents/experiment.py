@@ -6,11 +6,11 @@ Both are fully JSON-serializable for persistence and LLM consumption.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict
-from typing import Optional
+
 import json
 import time
 import uuid
+from dataclasses import asdict, dataclass, field
 
 
 @dataclass
@@ -65,18 +65,18 @@ class Experiment:
     history: list[dict] = field(default_factory=list)
     metrics: dict = field(default_factory=dict)
     status: str = "pending"  # pending, running, completed, failed
-    error: Optional[str] = None
+    error: str | None = None
     duration_s: float = 0.0
     timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S"))
-    checkpoint_path: Optional[str] = None
+    checkpoint_path: str | None = None
 
     @property
-    def best_val_loss(self) -> Optional[float]:
+    def best_val_loss(self) -> float | None:
         val_losses = [h.get("val_loss") for h in self.history if "val_loss" in h]
         return min(val_losses) if val_losses else None
 
     @property
-    def final_train_loss(self) -> Optional[float]:
+    def final_train_loss(self) -> float | None:
         if self.history:
             return self.history[-1].get("train_loss")
         return None

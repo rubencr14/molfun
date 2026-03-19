@@ -16,23 +16,22 @@ sequence-based deduplication via MMseqs2 clustering.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
+
+import gzip
 import json
 import logging
 import time
-import urllib.request
 import urllib.error
-import gzip
-import shutil
-import hashlib
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-from molfun.data.storage import is_remote, open_path, exists, ensure_dir, list_files
+import contextlib
 
+from molfun.data.storage import ensure_dir, exists, is_remote, list_files, open_path
 
 _DEFAULT_CACHE = Path.home() / ".molfun" / "pdb_cache"
 _RCSB_DOWNLOAD = "https://files.rcsb.org/download"
@@ -43,14 +42,15 @@ _RCSB_GRAPHQL = "https://data.rcsb.org/graphql"
 @dataclass
 class StructureRecord:
     """Metadata for a single PDB structure, enriched from RCSB."""
+
     pdb_id: str
     path: str = ""
-    resolution: Optional[float] = None
+    resolution: float | None = None
     method: str = ""
     organism: str = ""
-    organism_id: Optional[int] = None
+    organism_id: int | None = None
     title: str = ""
-    sequence_length: Optional[int] = None
+    sequence_length: int | None = None
     ec_numbers: list[str] = field(default_factory=list)
     pfam_ids: list[str] = field(default_factory=list)
     deposition_date: str = ""
@@ -61,6 +61,7 @@ def _make_progress_bar(total: int, desc: str):
     """Create a tqdm progress bar if available, otherwise return None."""
     try:
         from tqdm import tqdm
+
         return tqdm(total=total, desc=desc, unit="file")
     except ImportError:
         return None
@@ -99,11 +100,11 @@ class PDBFetcher:
 
     def __init__(
         self,
-        cache_dir: Optional[str] = None,
+        cache_dir: str | None = None,
         fmt: str = "cif",
         workers: int = 4,
         progress: bool = False,
-        storage_options: Optional[dict] = None,
+        storage_options: dict | None = None,
     ):
         """
         Args:
@@ -132,8 +133,8 @@ class PDBFetcher:
     def fetch(
         self,
         pdb_ids: list[str],
-        workers: Optional[int] = None,
-        progress: Optional[bool] = None,
+        workers: int | None = None,
+        progress: bool | None = None,
     ) -> list[str]:
         """
         Download structures by PDB ID.
@@ -195,8 +196,7 @@ class PDBFetcher:
         try:
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {
-                    pool.submit(self._download_with_retry, pid, path): pid
-                    for pid, path in items
+                    pool.submit(self._download_with_retry, pid, path): pid for pid, path in items
                 }
                 for future in as_completed(futures):
                     pid = futures[future]
@@ -390,12 +390,12 @@ class PDBFetcher:
     def fetch_combined(
         self,
         *,
-        pfam_id: Optional[str] = None,
-        ec_number: Optional[str] = None,
-        go_id: Optional[str] = None,
-        taxonomy_id: Optional[int] = None,
-        keyword: Optional[str] = None,
-        uniprot_ids: Optional[list[str]] = None,
+        pfam_id: str | None = None,
+        ec_number: str | None = None,
+        go_id: str | None = None,
+        taxonomy_id: int | None = None,
+        keyword: str | None = None,
+        uniprot_ids: list[str] | None = None,
         max_structures: int = 500,
         resolution_max: float = 3.0,
     ) -> list[str]:
@@ -461,20 +461,22 @@ class PDBFetcher:
         for pid, path in zip(pdb_ids, paths):
             pid_upper = pid.strip().upper()
             meta = metadata.get(pid_upper, {})
-            records.append(StructureRecord(
-                pdb_id=pid.strip().lower(),
-                path=path,
-                resolution=meta.get("resolution"),
-                method=meta.get("method", ""),
-                organism=meta.get("organism", ""),
-                organism_id=meta.get("organism_id"),
-                title=meta.get("title", ""),
-                sequence_length=meta.get("sequence_length"),
-                ec_numbers=meta.get("ec_numbers", []),
-                pfam_ids=meta.get("pfam_ids", []),
-                deposition_date=meta.get("deposition_date", ""),
-                has_ligand=meta.get("has_ligand", False),
-            ))
+            records.append(
+                StructureRecord(
+                    pdb_id=pid.strip().lower(),
+                    path=path,
+                    resolution=meta.get("resolution"),
+                    method=meta.get("method", ""),
+                    organism=meta.get("organism", ""),
+                    organism_id=meta.get("organism_id"),
+                    title=meta.get("title", ""),
+                    sequence_length=meta.get("sequence_length"),
+                    ec_numbers=meta.get("ec_numbers", []),
+                    pfam_ids=meta.get("pfam_ids", []),
+                    deposition_date=meta.get("deposition_date", ""),
+                    has_ligand=meta.get("has_ligand", False),
+                )
+            )
         return records
 
     # ------------------------------------------------------------------
@@ -484,11 +486,11 @@ class PDBFetcher:
     def search_ids(
         self,
         *,
-        pfam_id: Optional[str] = None,
-        ec_number: Optional[str] = None,
-        go_id: Optional[str] = None,
-        taxonomy_id: Optional[int] = None,
-        keyword: Optional[str] = None,
+        pfam_id: str | None = None,
+        ec_number: str | None = None,
+        go_id: str | None = None,
+        taxonomy_id: int | None = None,
+        keyword: str | None = None,
         max_results: int = 500,
         resolution_max: float = 3.0,
     ) -> list[str]:
@@ -544,7 +546,9 @@ class PDBFetcher:
             Paths to representative structures (one per cluster).
         """
         representatives = deduplicate_by_sequence(
-            pdb_ids, identity=identity, coverage=coverage,
+            pdb_ids,
+            identity=identity,
+            coverage=coverage,
         )
         return self.fetch(representatives)
 
@@ -560,6 +564,7 @@ class PDBFetcher:
         for f in files:
             if is_remote(f):
                 from molfun.data.storage import _get_fs
+
                 fs, fs_path = _get_fs(f, self.storage_options)
                 fs.rm(fs_path)
             else:
@@ -579,6 +584,7 @@ class PDBFetcher:
         url = f"{_RCSB_DOWNLOAD}/{pdb_id}.{ext}.gz"
 
         import tempfile
+
         with tempfile.NamedTemporaryFile(suffix=".gz", delete=False) as tmp:
             tmp_gz = tmp.name
         try:
@@ -611,8 +617,10 @@ class PDBFetcher:
                 if not retryable and isinstance(e, urllib.error.HTTPError):
                     raise
                 if attempt < max_retries - 1:
-                    wait = 2 ** attempt + 0.1
-                    logger.debug("Retry %d/%d for %s (%.1fs): %s", attempt + 1, max_retries, pdb_id, wait, e)
+                    wait = 2**attempt + 0.1
+                    logger.debug(
+                        "Retry %d/%d for %s (%.1fs): %s", attempt + 1, max_retries, pdb_id, wait, e
+                    )
                     time.sleep(wait)
                 else:
                     raise
@@ -627,6 +635,7 @@ class PDBFetcher:
     def _search_rcsb_full(query: dict, max_results: int = 500) -> tuple[int, list[str]]:
         """Execute RCSB query, return (total_count, pdb_ids)."""
         import copy
+
         q = copy.deepcopy(query)
         q["request_options"] = {
             "paginate": {"start": 0, "rows": max_results},
@@ -644,10 +653,8 @@ class PDBFetcher:
                 result = json.loads(resp.read())
         except urllib.error.HTTPError as e:
             body = ""
-            try:
+            with contextlib.suppress(Exception):
                 body = e.read().decode()[:200]
-            except Exception:
-                pass
             logger.warning("RCSB search failed (HTTP %d): %s", e.code, body)
             return 0, []
 
@@ -658,11 +665,11 @@ class PDBFetcher:
     def count(
         self,
         *,
-        pfam_id: Optional[str] = None,
-        ec_number: Optional[str] = None,
-        go_id: Optional[str] = None,
-        taxonomy_id: Optional[int] = None,
-        keyword: Optional[str] = None,
+        pfam_id: str | None = None,
+        ec_number: str | None = None,
+        go_id: str | None = None,
+        taxonomy_id: int | None = None,
+        keyword: str | None = None,
         resolution_max: float = 3.0,
     ) -> int:
         """
@@ -706,6 +713,7 @@ class PDBFetcher:
 # RCSB query node builders (composable)
 # ------------------------------------------------------------------
 
+
 def _wrap_terminal(terminal: dict) -> dict:
     """Wrap a terminal node in a service group as required by RCSB Search API v2."""
     return {
@@ -717,112 +725,123 @@ def _wrap_terminal(terminal: dict) -> dict:
 
 
 def _resolution_node(resolution_max: float) -> dict:
-    return _wrap_terminal({
-        "type": "terminal",
-        "service": "text",
-        "parameters": {
-            "attribute": "rcsb_entry_info.resolution_combined",
-            "operator": "less_or_equal",
-            "value": resolution_max,
-        },
-    })
+    return _wrap_terminal(
+        {
+            "type": "terminal",
+            "service": "text",
+            "parameters": {
+                "attribute": "rcsb_entry_info.resolution_combined",
+                "operator": "less_or_equal",
+                "value": resolution_max,
+            },
+        }
+    )
 
 
 def _pfam_node(pfam_id: str) -> dict:
-    return _wrap_terminal({
-        "type": "terminal",
-        "service": "text",
-        "parameters": {
-            "attribute": "rcsb_polymer_entity_annotation.annotation_id",
-            "operator": "exact_match",
-            "value": pfam_id,
-        },
-    })
+    return _wrap_terminal(
+        {
+            "type": "terminal",
+            "service": "text",
+            "parameters": {
+                "attribute": "rcsb_polymer_entity_annotation.annotation_id",
+                "operator": "exact_match",
+                "value": pfam_id,
+            },
+        }
+    )
 
 
 def _uniprot_node(uniprot_id: str) -> dict:
-    return _wrap_terminal({
-        "type": "terminal",
-        "service": "text",
-        "parameters": {
-            "attribute": (
-                "rcsb_polymer_entity_container_identifiers"
-                ".reference_sequence_identifiers.database_accession"
-            ),
-            "operator": "exact_match",
-            "value": uniprot_id,
-        },
-    })
+    return _wrap_terminal(
+        {
+            "type": "terminal",
+            "service": "text",
+            "parameters": {
+                "attribute": (
+                    "rcsb_polymer_entity_container_identifiers"
+                    ".reference_sequence_identifiers.database_accession"
+                ),
+                "operator": "exact_match",
+                "value": uniprot_id,
+            },
+        }
+    )
 
 
 def _ec_node(ec_number: str) -> dict:
     ec_clean = ec_number.rstrip(".*")
-    return _wrap_terminal({
-        "type": "terminal",
-        "service": "text",
-        "parameters": {
-            "attribute": "rcsb_polymer_entity.rcsb_ec_lineage.id",
-            "operator": "exact_match",
-            "value": ec_clean,
-        },
-    })
+    return _wrap_terminal(
+        {
+            "type": "terminal",
+            "service": "text",
+            "parameters": {
+                "attribute": "rcsb_polymer_entity.rcsb_ec_lineage.id",
+                "operator": "exact_match",
+                "value": ec_clean,
+            },
+        }
+    )
 
 
 def _go_node(go_id: str) -> dict:
-    return _wrap_terminal({
-        "type": "terminal",
-        "service": "text",
-        "parameters": {
-            "attribute": (
-                "rcsb_polymer_entity_annotation"
-                ".annotation_lineage.id"
-            ),
-            "operator": "exact_match",
-            "value": go_id,
-        },
-    })
+    return _wrap_terminal(
+        {
+            "type": "terminal",
+            "service": "text",
+            "parameters": {
+                "attribute": ("rcsb_polymer_entity_annotation.annotation_lineage.id"),
+                "operator": "exact_match",
+                "value": go_id,
+            },
+        }
+    )
 
 
 def _taxonomy_node(taxonomy_id: int) -> dict:
-    return _wrap_terminal({
-        "type": "terminal",
-        "service": "text",
-        "parameters": {
-            "attribute": "rcsb_entity_source_organism.taxonomy_lineage.id",
-            "operator": "exact_match",
-            "value": str(taxonomy_id),
-        },
-    })
+    return _wrap_terminal(
+        {
+            "type": "terminal",
+            "service": "text",
+            "parameters": {
+                "attribute": "rcsb_entity_source_organism.taxonomy_lineage.id",
+                "operator": "exact_match",
+                "value": str(taxonomy_id),
+            },
+        }
+    )
 
 
 def _keyword_node(keyword: str) -> dict:
-    return _wrap_terminal({
-        "type": "terminal",
-        "service": "full_text",
-        "parameters": {
-            "value": keyword,
-        },
-    })
+    return _wrap_terminal(
+        {
+            "type": "terminal",
+            "service": "full_text",
+            "parameters": {
+                "value": keyword,
+            },
+        }
+    )
 
 
 def _scop_node(scop_id: str) -> dict:
-    return _wrap_terminal({
-        "type": "terminal",
-        "service": "text",
-        "parameters": {
-            "attribute": (
-                "rcsb_polymer_entity_annotation"
-                ".annotation_lineage.id"
-            ),
-            "operator": "exact_match",
-            "value": scop_id,
-        },
-    })
+    return _wrap_terminal(
+        {
+            "type": "terminal",
+            "service": "text",
+            "parameters": {
+                "attribute": ("rcsb_polymer_entity_annotation.annotation_lineage.id"),
+                "operator": "exact_match",
+                "value": scop_id,
+            },
+        }
+    )
 
 
 # ------------------------------------------------------------------
 # Full query builders (wrap nodes + resolution)
 # ------------------------------------------------------------------
+
 
 def _and_query(*nodes: dict) -> dict:
     return {"query": {"type": "group", "logical_operator": "and", "nodes": list(nodes)}}
@@ -942,9 +961,7 @@ def _fetch_metadata_graphql(pdb_ids: list[str]) -> dict[str, dict]:
                         aid = ann.get("annotation_id", "")
                         if aid and aid not in pfam_ids:
                             pfam_ids.append(aid)
-                seq = (pe.get("entity_poly") or {}).get(
-                    "pdbx_seq_one_letter_code_can", ""
-                )
+                seq = (pe.get("entity_poly") or {}).get("pdbx_seq_one_letter_code_can", "")
                 seq_len = max(seq_len, len(seq))
                 for src in pe.get("rcsb_entity_source_organism") or []:
                     if not organism:
@@ -952,7 +969,9 @@ def _fetch_metadata_graphql(pdb_ids: list[str]) -> dict[str, dict]:
                         organism_id = src.get("ncbi_taxonomy_id")
 
             res_combined = info.get("resolution_combined")
-            resolution = res_combined[0] if isinstance(res_combined, list) and res_combined else res_combined
+            resolution = (
+                res_combined[0] if isinstance(res_combined, list) and res_combined else res_combined
+            )
 
             result[pdb_id] = {
                 "resolution": resolution,
@@ -974,6 +993,7 @@ def _fetch_metadata_graphql(pdb_ids: list[str]) -> dict[str, dict]:
 # Sequence deduplication
 # ------------------------------------------------------------------
 
+
 def _fetch_sequences_rcsb(pdb_ids: list[str]) -> dict[str, str]:
     """Fetch canonical sequences from RCSB GraphQL (first entity only)."""
     ids_upper = [pid.strip().upper() for pid in pdb_ids]
@@ -994,7 +1014,8 @@ def _fetch_sequences_rcsb(pdb_ids: list[str]) -> dict[str, str]:
         batch = ids_upper[i : i + batch_size]
         payload = json.dumps({"query": gql, "variables": {"ids": batch}}).encode()
         req = urllib.request.Request(
-            _RCSB_GRAPHQL, data=payload,
+            _RCSB_GRAPHQL,
+            data=payload,
             headers={"Content-Type": "application/json"},
         )
         try:
@@ -1007,9 +1028,7 @@ def _fetch_sequences_rcsb(pdb_ids: list[str]) -> dict[str, str]:
                 continue
             pid = entry["rcsb_id"].lower()
             for pe in entry.get("polymer_entities") or []:
-                seq = (pe.get("entity_poly") or {}).get(
-                    "pdbx_seq_one_letter_code_can", ""
-                )
+                seq = (pe.get("entity_poly") or {}).get("pdbx_seq_one_letter_code_can", "")
                 if seq:
                     seqs[pid] = seq
                     break
@@ -1018,6 +1037,7 @@ def _fetch_sequences_rcsb(pdb_ids: list[str]) -> dict[str, str]:
 
 def _mmseqs_available() -> bool:
     import subprocess
+
     try:
         subprocess.run(["mmseqs", "version"], capture_output=True, check=True)
         return True
@@ -1034,11 +1054,17 @@ def _cluster_mmseqs(fasta_path: str, identity: float, coverage: float) -> list[s
         prefix = Path(tmpdir) / "clust"
         subprocess.run(
             [
-                "mmseqs", "easy-cluster",
-                fasta_path, str(prefix), tmpdir,
-                "--min-seq-id", str(identity),
-                "-c", str(coverage),
-                "--cov-mode", "0",
+                "mmseqs",
+                "easy-cluster",
+                fasta_path,
+                str(prefix),
+                tmpdir,
+                "--min-seq-id",
+                str(identity),
+                "-c",
+                str(coverage),
+                "--cov-mode",
+                "0",
             ],
             capture_output=True,
             check=True,
@@ -1110,6 +1136,7 @@ def deduplicate_by_sequence(
 
     if _mmseqs_available():
         import tempfile
+
         with tempfile.NamedTemporaryFile(mode="w", suffix=".fasta", delete=False) as f:
             for pid, seq in sequences.items():
                 f.write(f">{pid}\n{seq}\n")
