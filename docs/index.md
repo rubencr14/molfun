@@ -14,7 +14,7 @@ Swap attention heads, plug in LoRA adapters, track experiments, and export to pr
 --- all from a single unified API.
 
 <div class="hero-buttons">
-  <a href="getting-started/index.md" class="primary">Get Started</a>
+  <a href="getting-started/" class="primary">Get Started</a>
   <a href="https://github.com/rubencr14/molfun" class="secondary">GitHub</a>
 </div>
 
@@ -241,5 +241,5 @@ The registry-based plugin system and strategy pattern make it straightforward to
 
 !!! info "Ready to dive in?"
 
-    Head over to the **[Getting Started guide](getting-started/index.md)** to install Molfun and make your first prediction,
+    Head over to the **[Getting Started guide](getting-started/)** to install Molfun and make your first prediction,
     or explore the **[Architecture overview](architecture/overview.md)** to understand how the system is designed.

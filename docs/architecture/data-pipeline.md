@@ -213,7 +213,7 @@ flowchart TB
     API --> Azure["Azure Blob"]
     API --> HTTP["HTTP/HTTPS"]
 
-    style API fill:#e1f5fe
+    style API fill:#0891b2,stroke:#0e7490,color:#ffffff
 ```
 
 | Function | Purpose |

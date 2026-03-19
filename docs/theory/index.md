@@ -15,7 +15,7 @@ structure module, these pages will give you the full picture.
 
 <div class="feature-card" markdown>
 
-### :material-protein: [Protein Structure Prediction](protein-structure-prediction.md)
+### :material-molecule: [Protein Structure Prediction](protein-structure-prediction.md)
 
 The AlphaFold2/OpenFold architecture from the ground up: MSA processing,
 the Evoformer trunk, Invariant Point Attention, the diffusion approach in

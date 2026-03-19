@@ -35,10 +35,10 @@ flowchart LR
     GPU1 <-->|All-Reduce / All-Gather| GPU2
     GPU2 <-->|All-Reduce / All-Gather| GPU3
 
-    style GPU0 fill:#e8f4e8
-    style GPU1 fill:#e8f4e8
-    style GPU2 fill:#e8f4e8
-    style GPU3 fill:#e8f4e8
+    style GPU0 fill:#16a34a,stroke:#15803d,color:#ffffff
+    style GPU1 fill:#16a34a,stroke:#15803d,color:#ffffff
+    style GPU2 fill:#16a34a,stroke:#15803d,color:#ffffff
+    style GPU3 fill:#16a34a,stroke:#15803d,color:#ffffff
 ```
 
 ## DDP -- Single Node, Multi-GPU
