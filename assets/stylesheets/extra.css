@@ -1,0 +1,415 @@
+/* ─── Catppuccin Mocha Color Overrides ─── */
+:root {
+  --ctp-rosewater: #f5e0dc;
+  --ctp-flamingo: #f2cdcd;
+  --ctp-pink: #f5c2e7;
+  --ctp-mauve: #cba6f7;
+  --ctp-red: #f38ba8;
+  --ctp-maroon: #eba0ac;
+  --ctp-peach: #fab387;
+  --ctp-yellow: #f9e2af;
+  --ctp-green: #a6e3a1;
+  --ctp-teal: #94e2d5;
+  --ctp-sky: #89dceb;
+  --ctp-sapphire: #74c7ec;
+  --ctp-blue: #89b4fa;
+  --ctp-lavender: #b4befe;
+  --ctp-text: #cdd6f4;
+  --ctp-subtext1: #bac2de;
+  --ctp-subtext0: #a6adc8;
+  --ctp-overlay2: #9399b2;
+  --ctp-overlay1: #7f849c;
+  --ctp-overlay0: #6c7086;
+  --ctp-surface2: #585b70;
+  --ctp-surface1: #45475a;
+  --ctp-surface0: #313244;
+  --ctp-base: #1e1e2e;
+  --ctp-mantle: #181825;
+  --ctp-crust: #11111b;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: var(--ctp-base);
+  --md-default-fg-color: var(--ctp-text);
+  --md-primary-fg-color: #ffffff;
+  --md-primary-bg-color: #2d1b69;
+  --md-accent-fg-color: var(--ctp-teal);
+  --md-code-bg-color: var(--ctp-mantle);
+  --md-code-fg-color: var(--ctp-text);
+  --md-typeset-a-color: var(--ctp-sapphire);
+  --md-footer-bg-color: var(--ctp-crust);
+  --md-footer-fg-color: var(--ctp-subtext0);
+}
+
+[data-md-color-scheme="slate"] .md-header {
+  background-color: #2d1b69;
+  color: #ffffff;
+}
+
+[data-md-color-scheme="slate"] .md-header .md-header__title,
+[data-md-color-scheme="slate"] .md-header .md-logo,
+[data-md-color-scheme="slate"] .md-header .md-search__input,
+[data-md-color-scheme="slate"] .md-header .md-header__button,
+[data-md-color-scheme="slate"] .md-header .md-source__repository,
+[data-md-color-scheme="slate"] .md-header .md-source {
+  color: #ffffff;
+}
+
+[data-md-color-scheme="slate"] .md-tabs {
+  background-color: #241557;
+  color: #ffffff;
+}
+
+[data-md-color-scheme="slate"] .md-tabs__link {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+[data-md-color-scheme="slate"] .md-tabs__link--active,
+[data-md-color-scheme="slate"] .md-tabs__link:hover {
+  color: #ffffff;
+}
+
+[data-md-color-scheme="slate"] .md-nav__link--active {
+  color: var(--ctp-mauve);
+}
+
+[data-md-color-scheme="slate"] .md-search__input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* ─── Hero Section ─── */
+.md-hero {
+  background: linear-gradient(135deg, #f3f0ff 0%, #e8e0ff 40%, #d4c6ff 100%);
+  padding: 4rem 2rem;
+  text-align: center;
+  border-radius: 12px;
+  margin-bottom: 2rem;
+}
+
+[data-md-color-scheme="slate"] .md-hero {
+  background: linear-gradient(135deg, var(--ctp-crust) 0%, var(--ctp-base) 40%, #2a1f4e 100%);
+}
+
+.md-hero .hero-image {
+  max-width: 750px;
+  width: 100%;
+  height: auto;
+  margin-bottom: 1.5rem;
+  border-radius: 16px;
+  filter: drop-shadow(0 4px 20px rgba(124, 58, 237, 0.3));
+}
+
+.md-hero h1 {
+  font-size: 3.5rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #7c3aed, #0d9488);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0.5rem;
+}
+
+[data-md-color-scheme="slate"] .md-hero h1 {
+  background: linear-gradient(135deg, var(--ctp-mauve), var(--ctp-teal));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.md-hero p {
+  font-size: 1.25rem;
+  color: #64748b;
+  max-width: 700px;
+  margin: 0 auto 2rem;
+}
+
+[data-md-color-scheme="slate"] .md-hero p {
+  color: var(--ctp-subtext1);
+}
+
+.md-hero .hero-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.md-hero .hero-buttons a {
+  display: inline-block;
+  padding: 0.75rem 2rem;
+  border-radius: 8px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.md-hero .hero-buttons a:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.3);
+}
+
+.md-hero .hero-buttons .primary {
+  background: linear-gradient(135deg, #7c3aed, #9b6dff);
+  color: #ffffff;
+}
+
+[data-md-color-scheme="slate"] .md-hero .hero-buttons .primary {
+  background: linear-gradient(135deg, var(--ctp-mauve), #9b6dff);
+  color: var(--ctp-crust);
+}
+
+.md-hero .hero-buttons .secondary {
+  background: #ffffff;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+[data-md-color-scheme="slate"] .md-hero .hero-buttons .secondary {
+  background: var(--ctp-surface0);
+  color: var(--ctp-text);
+  border: 1px solid var(--ctp-surface2);
+}
+
+/* ─── Feature Card Grid ─── */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+
+.feature-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+[data-md-color-scheme="slate"] .feature-card {
+  background: var(--ctp-surface0);
+  border-color: var(--ctp-surface1);
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  border-color: #7c3aed;
+  box-shadow: 0 8px 30px rgba(124, 58, 237, 0.12);
+}
+
+[data-md-color-scheme="slate"] .feature-card:hover {
+  border-color: var(--ctp-mauve);
+  box-shadow: 0 8px 30px rgba(203, 166, 247, 0.15);
+}
+
+.feature-card h3 {
+  color: #7c3aed;
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+[data-md-color-scheme="slate"] .feature-card h3 {
+  color: var(--ctp-mauve);
+}
+
+.feature-card p {
+  color: #64748b;
+  font-size: 0.9rem;
+  margin-bottom: 0;
+}
+
+[data-md-color-scheme="slate"] .feature-card p {
+  color: var(--ctp-subtext0);
+}
+
+.feature-card .feature-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+/* ─── Mermaid diagram overrides ─── */
+
+/*
+ * Styled nodes set color via inline styles — never override those.
+ * We only style unstyled (default-themed) elements for dark mode.
+ */
+
+/* Dark mode: unstyled node shapes */
+[data-md-color-scheme="slate"] .mermaid .node rect:not([style*="fill"]),
+[data-md-color-scheme="slate"] .mermaid .node circle:not([style*="fill"]),
+[data-md-color-scheme="slate"] .mermaid .node polygon:not([style*="fill"]) {
+  fill: var(--ctp-surface0);
+  stroke: var(--ctp-surface2);
+}
+
+/* Dark mode: SVG <text> elements (axis labels, arrow text, subgraph titles) */
+[data-md-color-scheme="slate"] .mermaid text:not([style*="fill"]) {
+  fill: var(--ctp-text);
+}
+
+/* Dark mode: edge labels */
+[data-md-color-scheme="slate"] .mermaid .edgeLabel {
+  background-color: var(--ctp-surface0);
+  color: var(--ctp-text);
+}
+
+/* Dark mode: edge paths and arrowheads */
+[data-md-color-scheme="slate"] .mermaid .edgePath .path {
+  stroke: var(--ctp-overlay0);
+}
+
+[data-md-color-scheme="slate"] .mermaid .arrowheadPath {
+  fill: var(--ctp-overlay0);
+}
+
+/* Dark mode: subgraph clusters */
+[data-md-color-scheme="slate"] .mermaid .cluster rect {
+  fill: var(--ctp-mantle) !important;
+  stroke: var(--ctp-surface1) !important;
+}
+
+[data-md-color-scheme="slate"] .mermaid .cluster span {
+  color: var(--ctp-subtext0);
+}
+
+/* Both modes: force text inside styled nodes to inherit color from parent span */
+.mermaid .nodeLabel span,
+.mermaid .nodeLabel b,
+.mermaid .nodeLabel small,
+.mermaid .nodeLabel i,
+.mermaid .nodeLabel p,
+.mermaid .nodeLabel div {
+  color: inherit !important;
+}
+
+/* ─── Console-style code blocks ─── */
+.highlight pre {
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+[data-md-color-scheme="slate"] .highlight pre {
+  border-color: var(--ctp-surface1);
+  background-color: var(--ctp-mantle) !important;
+}
+
+/* ─── Tutorial Cards ─── */
+.tutorial-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+
+.tutorial-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  display: block;
+}
+
+[data-md-color-scheme="slate"] .tutorial-card {
+  background: var(--ctp-surface0);
+  border-color: var(--ctp-surface1);
+}
+
+.tutorial-card:hover {
+  transform: translateY(-4px);
+  border-color: #0d9488;
+  box-shadow: 0 8px 30px rgba(13, 148, 136, 0.12);
+}
+
+[data-md-color-scheme="slate"] .tutorial-card:hover {
+  border-color: var(--ctp-teal);
+  box-shadow: 0 8px 30px rgba(148, 226, 213, 0.15);
+}
+
+.tutorial-card h3 {
+  color: #1e293b;
+  margin-top: 0;
+}
+
+[data-md-color-scheme="slate"] .tutorial-card h3 {
+  color: var(--ctp-text);
+}
+
+.tutorial-card p {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+[data-md-color-scheme="slate"] .tutorial-card p {
+  color: var(--ctp-subtext0);
+}
+
+.tutorial-card .tutorial-card-title {
+  margin-top: -0.5rem;
+}
+
+.tutorial-card .lg {
+  font-size: 1.5rem;
+  vertical-align: middle;
+  margin-right: 0.25rem;
+}
+
+/* ─── Admonition tweaks ─── */
+[data-md-color-scheme="slate"] .md-typeset .admonition,
+[data-md-color-scheme="slate"] .md-typeset details {
+  background-color: var(--ctp-surface0);
+  border-color: var(--ctp-surface2);
+}
+
+/* ─── Section headers ─── */
+.section-header {
+  text-align: center;
+  margin: 3rem 0 1.5rem;
+}
+
+.section-header h2 {
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.section-header p {
+  color: #64748b;
+  font-size: 1.1rem;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+[data-md-color-scheme="slate"] .section-header p {
+  color: var(--ctp-subtext0);
+}
+
+/* ─── Badge styles ─── */
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+[data-md-color-scheme="slate"] .badge {
+  background: var(--ctp-surface1);
+  color: var(--ctp-subtext0);
+}
+
+.badge-beginner { background: rgba(22, 163, 74, 0.12); color: #16a34a; }
+.badge-intermediate { background: rgba(202, 138, 4, 0.12); color: #ca8a04; }
+.badge-advanced { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
+
+[data-md-color-scheme="slate"] .badge-beginner { background: rgba(166, 227, 161, 0.2); color: var(--ctp-green); }
+[data-md-color-scheme="slate"] .badge-intermediate { background: rgba(249, 226, 175, 0.2); color: var(--ctp-yellow); }
+[data-md-color-scheme="slate"] .badge-advanced { background: rgba(243, 139, 168, 0.2); color: var(--ctp-red); }
