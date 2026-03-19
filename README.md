@@ -1,6 +1,6 @@
 # Molfun — Fine-Tuning & Modular Architecture for Molecular ML
 
-![Molfun Banner](./docs/banner.png)
+![Molfun Banner](./docs/assets/images/home.png)
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](#installation)
