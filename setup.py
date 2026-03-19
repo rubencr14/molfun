@@ -80,6 +80,11 @@ setup(
             "pytest-cov>=4.0.0",
             "ruff>=0.4.0",
         ],
+        "docs": [
+            "mkdocs-material>=9.5",
+            "mkdocstrings[python]>=0.24",
+            "pymdown-extensions>=10.0",
+        ],
         "all": [
             "scikit-learn>=1.3.0",
             "joblib>=1.3.0",
