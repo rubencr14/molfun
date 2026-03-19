@@ -1,4 +1,4 @@
-.PHONY: help install install-dev install-test test test-cov test-modules test-training test-kernels lint
+.PHONY: help install install-dev install-test test test-cov test-modules test-training test-kernels lint docs docs-build docs-deploy
 
 help: ## Show available commands
 	@echo "Available commands:"
@@ -32,6 +32,15 @@ test-training: ## Run training strategy tests
 test-kernels: ## Run GPU kernel tests
 	@echo "Running kernel tests..."
 	pytest tests/kernels/ -v
+
+docs: ## Serve documentation locally
+	mkdocs serve
+
+docs-build: ## Build documentation site
+	mkdocs build
+
+docs-deploy: ## Deploy documentation to GitHub Pages
+	mkdocs gh-deploy
 
 lint: ## Run linter checks
 	@echo "Running linters..."

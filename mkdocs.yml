@@ -1,0 +1,176 @@
+site_name: Molfun
+site_description: Fine-tune protein structure prediction models with modular, plug-and-play architecture
+site_url: https://molfun.readthedocs.io
+repo_url: https://github.com/rubencr14/molfun
+repo_name: rubencr14/molfun
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+    logo: material/molecule
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.copy
+    - content.code.annotate
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            heading_level: 2
+            members_order: source
+            docstring_style: google
+            show_signature_annotations: true
+            separate_signature: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/rubencr14/molfun
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/molfun/
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - getting-started/index.md
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - First Prediction: getting-started/first-prediction.md
+    - First Fine-Tuning: getting-started/first-finetuning.md
+  - Tutorials:
+    - tutorials/index.md
+    - Stability Prediction: tutorials/stability-prediction.md
+    - Binding Affinity: tutorials/binding-affinity.md
+    - Kinase Refinement: tutorials/kinase-refinement.md
+    - LoRA for Small Datasets: tutorials/lora-small-datasets.md
+    - Custom Architectures: tutorials/custom-architectures.md
+    - Experiment Tracking: tutorials/experiment-tracking.md
+    - YAML Pipelines: tutorials/yaml-pipelines.md
+  - Architecture:
+    - architecture/index.md
+    - System Overview: architecture/overview.md
+    - Design Patterns: architecture/patterns.md
+    - Module System: architecture/module-system.md
+    - Training Framework: architecture/training-framework.md
+    - Data Pipeline: architecture/data-pipeline.md
+  - Extending:
+    - extending/index.md
+    - Attention Modules: extending/attention.md
+    - Blocks: extending/blocks.md
+    - Structure Modules: extending/structure-modules.md
+    - Embedders: extending/embedders.md
+    - Loss Functions: extending/losses.md
+    - Training Strategies: extending/strategies.md
+    - Trackers: extending/trackers.md
+    - Model Backends: extending/backends.md
+  - Reference:
+    - reference/index.md
+    - Core API:
+      - MolfunStructureModel: reference/api/model.md
+      - Predict Functions: reference/api/predict.md
+      - PEFT: reference/api/peft.md
+    - Training:
+      - Strategies: reference/training/strategies.md
+      - Distributed: reference/training/distributed.md
+    - Modules:
+      - Registry: reference/modules/registry.md
+      - Attention: reference/modules/attention.md
+      - Blocks: reference/modules/blocks.md
+      - Structure Modules: reference/modules/structure-modules.md
+      - Embedders: reference/modules/embedders.md
+      - Model Builder: reference/modules/builder.md
+      - Module Swapper: reference/modules/swapper.md
+    - Data:
+      - Fetchers: reference/data/fetchers.md
+      - Datasets: reference/data/datasets.md
+      - Splits: reference/data/splits.md
+      - Parsers: reference/data/parsers.md
+      - Collections: reference/data/collections.md
+    - Losses: reference/losses.md
+    - Tracking: reference/tracking.md
+    - Export: reference/export.md
+    - CLI: reference/cli.md
+  - Advanced:
+    - advanced/index.md
+    - Distributed Training: advanced/distributed.md
+    - Triton Kernels: advanced/kernels.md
+    - Model Export: advanced/export.md
+    - HuggingFace Hub: advanced/hub.md
+    - Pipelines: advanced/pipelines.md

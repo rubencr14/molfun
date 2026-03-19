@@ -37,6 +37,13 @@ markers = [
     "integration: marks tests as integration tests",
 ]
 
+[project.optional-dependencies]
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.24",
+    "pymdown-extensions>=10.0",
+]
+
 [tool.coverage.run]
 source = ["molfun"]
 omit = ["molfun/kernels/*", "tests/*"]
