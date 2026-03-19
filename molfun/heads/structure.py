@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 import torch.nn as nn
 
-from molfun.losses.openfold import OpenFoldLoss
+from molfun.backends.openfold.loss import OpenFoldLoss
 
 if TYPE_CHECKING:
     import torch

@@ -1,5 +1,5 @@
 """
-Partial fine-tuning: freeze early layers, unfreeze last N evoformer blocks + head.
+Partial fine-tuning: freeze early layers, unfreeze last N trunk blocks + head.
 
 Middle ground between LoRA (very few params) and full FT (all params).
 Good when you have moderate data (~1k-10k samples) and want the trunk
@@ -15,12 +15,17 @@ from molfun.training.base import FinetuneStrategy
 
 class PartialFinetune(FinetuneStrategy):
     """
-    Freeze everything except the last `unfreeze_last_n` evoformer blocks,
+    Freeze everything except the last ``unfreeze_last_n`` trunk blocks,
     the structure module (optionally), and the task head.
+
+    Works with any adapter that implements ``get_trunk_blocks()`` — OpenFold
+    (Evoformer blocks), Protenix (Pairformer blocks), ESMFold (transformer
+    layers), or custom models built with ModelBuilder.
 
     Supports separate LRs for trunk vs head (discriminative fine-tuning).
 
-    Usage:
+    Usage::
+
         strategy = PartialFinetune(
             unfreeze_last_n=6,
             unfreeze_structure_module=True,
@@ -47,7 +52,7 @@ class PartialFinetune(FinetuneStrategy):
     def _setup_impl(self, model) -> None:
         model.adapter.freeze_trunk()
 
-        blocks = model.adapter.get_evoformer_blocks()
+        blocks = model.adapter.get_trunk_blocks()
         n_blocks = len(blocks)
         start = max(0, n_blocks - self.unfreeze_last_n)
         for block in blocks[start:]:
@@ -55,7 +60,7 @@ class PartialFinetune(FinetuneStrategy):
                 p.requires_grad = True
 
         if self.unfreeze_structure_module:
-            sm = getattr(model.adapter.model, "structure_module", None)
+            sm = model.adapter.get_structure_module()
             if sm is not None:
                 for p in sm.parameters():
                     p.requires_grad = True
@@ -65,7 +70,7 @@ class PartialFinetune(FinetuneStrategy):
             raise RuntimeError("No head attached to model.")
 
         trunk_params = [
-            p for p in model.adapter.model.parameters() if p.requires_grad
+            p for p in model.adapter.parameters() if p.requires_grad
         ]
         head_params = list(model.head.parameters())
 

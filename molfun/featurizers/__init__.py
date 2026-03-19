@@ -1,1 +1,0 @@
-from molfun.featurizers.openfold import OpenFoldFeaturizer

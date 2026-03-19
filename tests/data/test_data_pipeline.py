@@ -1,21 +1,50 @@
 """
-Tests for the data pipeline: sources, datasets, splits.
+Tests for the data pipeline: sources, datasets, splits, collections.
 Uses mock/local data to avoid network calls.
 """
 
 import pytest
 import tempfile
+import json
+import urllib.error
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 import torch
 from torch.utils.data import DataLoader
 
-from molfun.data.sources.pdb import PDBFetcher
+from molfun.data.sources.pdb import (
+    PDBFetcher,
+    StructureRecord,
+    deduplicate_by_sequence,
+    _pfam_query,
+    _ec_query,
+    _go_query,
+    _taxonomy_query,
+    _keyword_query,
+    _scop_query,
+    _pfam_node,
+    _ec_node,
+    _go_node,
+    _taxonomy_node,
+    _keyword_node,
+    _resolution_node,
+    _and_query,
+    _cluster_greedy,
+)
 from molfun.data.sources.affinity import AffinityFetcher, AffinityRecord
 from molfun.data.sources.msa import MSAProvider
 from molfun.data.datasets.structure import StructureDataset, collate_structure_batch
 from molfun.data.datasets.affinity import AffinityDataset
 from molfun.data.splits import DataSplitter
+from molfun.data.collections import (
+    COLLECTIONS,
+    CollectionSpec,
+    list_collections,
+    fetch_collection,
+    count_collection,
+    count_all_collections,
+)
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────
@@ -405,3 +434,473 @@ class TestMSAIntegration:
         assert batch_feat["msa"].shape[0] == 2       # batch dim
         assert batch_feat["msa"].dim() == 3           # [B, N, L]
         assert batch_feat["msa_mask"].shape == batch_feat["msa"].shape
+
+
+# ── RCSB Query Builders ──────────────────────────────────────────────
+
+class TestQueryBuilders:
+
+    def test_resolution_node_structure(self):
+        node = _resolution_node(2.5)
+        assert node["type"] == "terminal"
+        assert node["parameters"]["value"] == 2.5
+        assert node["parameters"]["operator"] == "less_or_equal"
+
+    def test_pfam_node_structure(self):
+        node = _pfam_node("PF00069")
+        assert node["parameters"]["value"] == "PF00069"
+        assert "annotation_id" in node["parameters"]["attribute"]
+
+    def test_ec_node_strips_wildcard(self):
+        node = _ec_node("2.7.*")
+        assert node["parameters"]["value"] == "2.7"
+        node2 = _ec_node("2.7.11.1")
+        assert node2["parameters"]["value"] == "2.7.11.1"
+
+    def test_go_node_structure(self):
+        node = _go_node("GO:0004672")
+        assert node["parameters"]["value"] == "GO:0004672"
+
+    def test_taxonomy_node_converts_to_str(self):
+        node = _taxonomy_node(9606)
+        assert node["parameters"]["value"] == "9606"
+
+    def test_keyword_node_uses_full_text(self):
+        node = _keyword_node("tyrosine kinase")
+        assert node["service"] == "full_text"
+        assert node["parameters"]["value"] == "tyrosine kinase"
+
+    def test_and_query_wraps_nodes(self):
+        q = _and_query(_pfam_node("PF00069"), _resolution_node(3.0))
+        assert q["query"]["logical_operator"] == "and"
+        assert len(q["query"]["nodes"]) == 2
+
+    def test_pfam_query_has_two_nodes(self):
+        q = _pfam_query("PF00069", 3.0)
+        assert len(q["query"]["nodes"]) == 2
+
+    def test_ec_query_has_two_nodes(self):
+        q = _ec_query("2.7.11", 2.5)
+        assert len(q["query"]["nodes"]) == 2
+
+    def test_go_query_has_two_nodes(self):
+        q = _go_query("GO:0004672", 3.0)
+        assert len(q["query"]["nodes"]) == 2
+
+    def test_taxonomy_query_has_two_nodes(self):
+        q = _taxonomy_query(9606, 3.0)
+        assert len(q["query"]["nodes"]) == 2
+
+    def test_keyword_query_has_two_nodes(self):
+        q = _keyword_query("helicase", 3.0)
+        assert len(q["query"]["nodes"]) == 2
+
+    def test_scop_query_has_two_nodes(self):
+        q = _scop_query("b.1.1.1", 3.0)
+        assert len(q["query"]["nodes"]) == 2
+
+
+# ── StructureRecord ──────────────────────────────────────────────────
+
+class TestStructureRecord:
+
+    def test_defaults(self):
+        r = StructureRecord(pdb_id="1abc")
+        assert r.pdb_id == "1abc"
+        assert r.resolution is None
+        assert r.ec_numbers == []
+        assert r.pfam_ids == []
+        assert r.has_ligand is False
+
+    def test_full_record(self):
+        r = StructureRecord(
+            pdb_id="1abc",
+            path="/cache/1abc.cif",
+            resolution=1.8,
+            method="X-RAY DIFFRACTION",
+            organism="Homo sapiens",
+            organism_id=9606,
+            title="Crystal structure of kinase",
+            sequence_length=350,
+            ec_numbers=["2.7.11.1"],
+            pfam_ids=["PF00069"],
+            deposition_date="2020-01-15",
+            has_ligand=True,
+        )
+        assert r.resolution == 1.8
+        assert r.organism_id == 9606
+        assert "2.7.11.1" in r.ec_numbers
+
+
+# ── PDBFetcher new methods ───────────────────────────────────────────
+
+class TestPDBFetcherDomain:
+    """Tests for new domain-specific fetch methods (mocked network)."""
+
+    def _mock_search(self, return_ids):
+        def fake_search(query, max_results=500):
+            return return_ids
+        return fake_search
+
+    def test_fetch_by_ec(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        with patch.object(fetcher, "_search_rcsb", self._mock_search(["1abc"])):
+            with patch.object(fetcher, "fetch", return_value=[str(tmp_path / "1abc.cif")]) as mock_fetch:
+                paths = fetcher.fetch_by_ec("2.7.11", max_structures=10)
+                mock_fetch.assert_called_once_with(["1abc"])
+                assert len(paths) == 1
+
+    def test_fetch_by_go(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        with patch.object(fetcher, "_search_rcsb", self._mock_search(["2xyz"])):
+            with patch.object(fetcher, "fetch", return_value=[str(tmp_path / "2xyz.cif")]):
+                paths = fetcher.fetch_by_go("GO:0004672")
+                assert len(paths) == 1
+
+    def test_fetch_by_taxonomy(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        with patch.object(fetcher, "_search_rcsb", self._mock_search(["3def"])):
+            with patch.object(fetcher, "fetch", return_value=[str(tmp_path / "3def.cif")]):
+                paths = fetcher.fetch_by_taxonomy(9606)
+                assert len(paths) == 1
+
+    def test_fetch_by_keyword(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        with patch.object(fetcher, "_search_rcsb", self._mock_search(["4ghi"])):
+            with patch.object(fetcher, "fetch", return_value=[str(tmp_path / "4ghi.cif")]):
+                paths = fetcher.fetch_by_keyword("tyrosine kinase")
+                assert len(paths) == 1
+
+    def test_fetch_by_scop(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        with patch.object(fetcher, "_search_rcsb", self._mock_search(["5jkl"])):
+            with patch.object(fetcher, "fetch", return_value=[str(tmp_path / "5jkl.cif")]):
+                paths = fetcher.fetch_by_scop("b.1.1.1")
+                assert len(paths) == 1
+
+    def test_fetch_combined_requires_filter(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        with pytest.raises(ValueError, match="at least one filter"):
+            fetcher.fetch_combined(resolution_max=3.0)
+
+    def test_fetch_combined_builds_query(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        with patch.object(fetcher, "_search_rcsb", self._mock_search(["1abc", "2xyz"])):
+            with patch.object(fetcher, "fetch", return_value=["a", "b"]):
+                paths = fetcher.fetch_combined(pfam_id="PF00069", taxonomy_id=9606)
+                assert len(paths) == 2
+
+    def test_search_ids_returns_ids_without_download(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        with patch.object(fetcher, "_search_rcsb", self._mock_search(["1abc", "2xyz", "3def"])):
+            ids = fetcher.search_ids(pfam_id="PF00069", max_results=100)
+            assert ids == ["1abc", "2xyz", "3def"]
+
+    def test_search_ids_requires_filter(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        with pytest.raises(ValueError, match="at least one filter"):
+            fetcher.search_ids(max_results=10)
+
+
+# ── Deduplication ────────────────────────────────────────────────────
+
+class TestDeduplication:
+
+    def test_cluster_greedy_identical_sequences(self):
+        seqs = {
+            "1abc": "AGVMKRPQLF",
+            "2xyz": "AGVMKRPQLF",
+            "3def": "COMPLETELY_DIFFERENT_SEQ",
+        }
+        reps = _cluster_greedy(seqs, identity=0.5)
+        assert len(reps) == 2
+        assert "3def" in reps
+
+    def test_cluster_greedy_all_different(self):
+        seqs = {
+            "1abc": "AAAAAAAAAA",
+            "2xyz": "BBBBBBBBBB",
+            "3def": "CCCCCCCCCC",
+        }
+        reps = _cluster_greedy(seqs, identity=0.5)
+        assert len(reps) == 3
+
+    def test_cluster_greedy_all_similar(self):
+        seqs = {
+            "1abc": "AGVMKRPQLF",
+            "2xyz": "AGVMKRPQLA",
+            "3def": "AGVMKRPQLG",
+        }
+        reps = _cluster_greedy(seqs, identity=0.5)
+        assert len(reps) == 1
+
+    def test_cluster_greedy_empty(self):
+        reps = _cluster_greedy({}, identity=0.3)
+        assert reps == []
+
+    def test_cluster_greedy_short_sequences(self):
+        seqs = {"1abc": "AG", "2xyz": "AG"}
+        reps = _cluster_greedy(seqs, identity=0.5)
+        assert len(reps) == 1
+
+    def test_deduplicate_single_id(self):
+        reps = deduplicate_by_sequence(["1abc"])
+        assert reps == ["1abc"]
+
+    def test_deduplicate_empty(self):
+        reps = deduplicate_by_sequence([])
+        assert reps == []
+
+    @patch("molfun.data.sources.pdb._fetch_sequences_rcsb", return_value={})
+    def test_deduplicate_no_sequences_returns_all(self, mock_fetch):
+        reps = deduplicate_by_sequence(["1abc", "2xyz"])
+        assert reps == ["1abc", "2xyz"]
+
+    @patch("molfun.data.sources.pdb._mmseqs_available", return_value=False)
+    @patch("molfun.data.sources.pdb._fetch_sequences_rcsb")
+    def test_deduplicate_uses_greedy_fallback(self, mock_fetch_seq, mock_mmseqs):
+        mock_fetch_seq.return_value = {
+            "1abc": "AGVMKRPQLF",
+            "2xyz": "AGVMKRPQLF",
+            "3def": "TOTALLYDIFFERENT",
+        }
+        reps = deduplicate_by_sequence(["1abc", "2xyz", "3def"], identity=0.5)
+        assert len(reps) == 2
+
+
+# ── Collections ──────────────────────────────────────────────────────
+
+class TestCollections:
+
+    def test_collections_populated(self):
+        assert len(COLLECTIONS) > 0
+        assert "kinases" in COLLECTIONS
+        assert "gpcr" in COLLECTIONS
+        assert "sars_cov2" in COLLECTIONS
+
+    def test_collection_spec_fields(self):
+        kinases = COLLECTIONS["kinases"]
+        assert kinases.pfam_id == "PF00069"
+        assert "kinase" in kinases.tags
+        assert kinases.description
+
+    def test_kinases_human_has_taxonomy(self):
+        kh = COLLECTIONS["kinases_human"]
+        assert kh.pfam_id == "PF00069"
+        assert kh.taxonomy_id == 9606
+
+    def test_list_collections_all(self):
+        specs = list_collections()
+        assert len(specs) == len(COLLECTIONS)
+
+    def test_list_collections_by_tag(self):
+        kinase_specs = list_collections(tag="kinase")
+        assert all("kinase" in s.tags for s in kinase_specs)
+        assert len(kinase_specs) >= 2  # at least kinases + kinases_human
+
+    def test_list_collections_empty_tag(self):
+        specs = list_collections(tag="nonexistent_tag_xyz")
+        assert specs == []
+
+    def test_fetch_collection_unknown_raises(self):
+        with pytest.raises(ValueError, match="Unknown collection"):
+            fetch_collection("does_not_exist")
+
+    @patch("molfun.data.collections.PDBFetcher")
+    def test_fetch_collection_kinases(self, mock_cls):
+        mock_fetcher = MagicMock()
+        mock_cls.return_value = mock_fetcher
+        mock_fetcher._search_rcsb.return_value = ["1abc", "2xyz"]
+        mock_fetcher.fetch.return_value = ["/path/1abc.cif", "/path/2xyz.cif"]
+
+        paths = fetch_collection("kinases", max_structures=10)
+        assert len(paths) == 2
+        mock_fetcher.fetch.assert_called_once()
+
+    @patch("molfun.data.collections.PDBFetcher")
+    def test_fetch_collection_with_dedup(self, mock_cls):
+        mock_fetcher = MagicMock()
+        mock_cls.return_value = mock_fetcher
+        mock_fetcher._search_rcsb.return_value = ["1abc", "2xyz", "3def"]
+        mock_fetcher.fetch.return_value = ["/path/1abc.cif"]
+
+        with patch("molfun.data.sources.pdb.deduplicate_by_sequence", return_value=["1abc"]):
+            paths = fetch_collection("kinases", deduplicate=True, identity=0.3)
+            assert len(paths) == 1
+
+    @patch("molfun.data.collections.PDBFetcher")
+    def test_fetch_collection_combined_query(self, mock_cls):
+        mock_fetcher = MagicMock()
+        mock_cls.return_value = mock_fetcher
+        mock_fetcher.search_ids.return_value = ["1abc"]
+        mock_fetcher.fetch.return_value = ["/path/1abc.cif"]
+
+        paths = fetch_collection("kinases_human", max_structures=5)
+        assert len(paths) == 1
+        mock_fetcher.search_ids.assert_called_once()
+
+
+# ── Metadata enrichment ──────────────────────────────────────────────
+
+class TestMetadataEnrichment:
+
+    @patch("molfun.data.sources.pdb._fetch_metadata_graphql")
+    def test_fetch_with_metadata(self, mock_graphql, tmp_path):
+        mock_graphql.return_value = {
+            "1ABC": {
+                "resolution": 1.8,
+                "method": "X-RAY DIFFRACTION",
+                "organism": "Homo sapiens",
+                "organism_id": 9606,
+                "title": "Kinase structure",
+                "sequence_length": 300,
+                "ec_numbers": ["2.7.11.1"],
+                "pfam_ids": ["PF00069"],
+                "deposition_date": "2020-01-15",
+                "has_ligand": True,
+            },
+        }
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        (tmp_path / "1abc.cif").write_text("mock")
+
+        records = fetcher.fetch_with_metadata(["1abc"])
+        assert len(records) == 1
+        r = records[0]
+        assert isinstance(r, StructureRecord)
+        assert r.pdb_id == "1abc"
+        assert r.resolution == 1.8
+        assert r.organism == "Homo sapiens"
+        assert "2.7.11.1" in r.ec_numbers
+        assert "PF00069" in r.pfam_ids
+        assert r.has_ligand is True
+
+
+# ── Count queries ────────────────────────────────────────────────────
+
+class TestCountQueries:
+
+    def test_count_requires_filter(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        with pytest.raises(ValueError, match="at least one filter"):
+            fetcher.count(resolution_max=3.0)
+
+    def test_count_uses_search_rcsb_full(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        with patch.object(fetcher, "_search_rcsb_full", return_value=(1234, [])):
+            n = fetcher.count(pfam_id="PF00069")
+            assert n == 1234
+
+    def test_count_collection_unknown_raises(self):
+        with pytest.raises(ValueError, match="Unknown collection"):
+            count_collection("does_not_exist")
+
+    @patch("molfun.data.collections.PDBFetcher")
+    def test_count_collection_returns_int(self, mock_cls):
+        mock_fetcher = MagicMock()
+        mock_cls.return_value = mock_fetcher
+        mock_fetcher.count.return_value = 5678
+        n = count_collection("kinases")
+        assert n == 5678
+        mock_fetcher.count.assert_called_once()
+
+    @patch("molfun.data.collections.PDBFetcher")
+    def test_count_all_collections(self, mock_cls):
+        mock_fetcher = MagicMock()
+        mock_cls.return_value = mock_fetcher
+        mock_fetcher.count.return_value = 100
+        counts = count_all_collections()
+        assert isinstance(counts, dict)
+        assert len(counts) == len(COLLECTIONS)
+        assert all(v == 100 for v in counts.values())
+
+    @patch("molfun.data.collections.PDBFetcher")
+    def test_count_all_collections_with_tag(self, mock_cls):
+        mock_fetcher = MagicMock()
+        mock_cls.return_value = mock_fetcher
+        mock_fetcher.count.return_value = 42
+        counts = count_all_collections(tag="kinase")
+        assert len(counts) >= 2
+        assert all("kinase" in COLLECTIONS[name].tags for name in counts)
+
+
+# ── Parallel download & retry ────────────────────────────────────────
+
+class TestParallelDownload:
+
+    def test_fetch_sequential_workers_1(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path), workers=1)
+        # Pre-create cached files
+        (tmp_path / "1abc.cif").write_text("mock1")
+        (tmp_path / "2xyz.cif").write_text("mock2")
+        paths = fetcher.fetch(["1abc", "2xyz"])
+        assert len(paths) == 2
+
+    def test_fetch_parallel_uses_cache(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path), workers=4)
+        (tmp_path / "1abc.cif").write_text("cached")
+        (tmp_path / "2xyz.cif").write_text("cached")
+        paths = fetcher.fetch(["1abc", "2xyz"])
+        assert len(paths) == 2
+
+    def test_fetch_workers_override(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path), workers=1)
+        (tmp_path / "a.cif").write_text("ok")
+        (tmp_path / "b.cif").write_text("ok")
+        paths = fetcher.fetch(["a", "b"], workers=8)
+        assert len(paths) == 2
+
+    def test_retry_on_transient_error(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        call_count = {"n": 0}
+
+        def flaky_download(pdb_id, dest):
+            call_count["n"] += 1
+            if call_count["n"] < 3:
+                err = urllib.error.HTTPError(
+                    "http://test", 503, "Service Unavailable", {}, None,
+                )
+                raise err
+            Path(dest).write_text("ok")
+
+        with patch.object(fetcher, "_download", side_effect=flaky_download):
+            fetcher._download_with_retry("test", str(tmp_path / "test.cif"), max_retries=3)
+        assert call_count["n"] == 3
+
+    def test_retry_raises_after_max_attempts(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+
+        def always_fail(pdb_id, dest):
+            raise urllib.error.HTTPError(
+                "http://test", 503, "Service Unavailable", {}, None,
+            )
+
+        with patch.object(fetcher, "_download", side_effect=always_fail):
+            with pytest.raises(urllib.error.HTTPError):
+                fetcher._download_with_retry("test", str(tmp_path / "t.cif"), max_retries=2)
+
+    def test_retry_no_retry_on_404(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path))
+        call_count = {"n": 0}
+
+        def not_found(pdb_id, dest):
+            call_count["n"] += 1
+            raise FileNotFoundError("not found")
+
+        with patch.object(fetcher, "_download", side_effect=not_found):
+            with pytest.raises(FileNotFoundError):
+                fetcher._download_with_retry("test", str(tmp_path / "t.cif"), max_retries=3)
+        assert call_count["n"] == 1
+
+    def test_default_workers_and_progress(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path), workers=8, progress=True)
+        assert fetcher.workers == 8
+        assert fetcher.progress is True
+
+    def test_fetch_preserves_order(self, tmp_path):
+        fetcher = PDBFetcher(cache_dir=str(tmp_path), workers=4)
+        for name in ["c", "a", "b"]:
+            (tmp_path / f"{name}.cif").write_text("ok")
+        paths = fetcher.fetch(["c", "a", "b"])
+        assert paths[0].endswith("c.cif")
+        assert paths[1].endswith("a.cif")
+        assert paths[2].endswith("b.cif")

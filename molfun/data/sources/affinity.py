@@ -12,6 +12,8 @@ from typing import Optional
 import csv
 import re
 
+from molfun.data.storage import open_path, ensure_dir
+
 
 _DEFAULT_CACHE = Path.home() / ".molfun" / "affinity_cache"
 
@@ -51,28 +53,28 @@ class AffinityFetcher:
         refined = fetcher.filter(records, resolution_max=2.5, min_year=2015)
     """
 
-    def __init__(self, cache_dir: Optional[str] = None):
-        self.cache_dir = Path(cache_dir) if cache_dir else _DEFAULT_CACHE
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, cache_dir: Optional[str] = None, storage_options: Optional[dict] = None):
+        self.cache_dir = str(cache_dir) if cache_dir else str(_DEFAULT_CACHE)
+        self.storage_options = storage_options
+        ensure_dir(self.cache_dir, storage_options=storage_options)
 
     # ------------------------------------------------------------------
     # Loaders
     # ------------------------------------------------------------------
 
     @staticmethod
-    def from_pdbbind_index(index_path: str) -> list[AffinityRecord]:
+    def from_pdbbind_index(
+        index_path: str,
+        storage_options: Optional[dict] = None,
+    ) -> list[AffinityRecord]:
         """
-        Parse a PDBbind INDEX file.
+        Parse a PDBbind INDEX file (local or remote).
 
         Expected format (space-separated, lines starting with # are comments):
             PDB_code  resolution  release_year  -logKd/Ki  Kd/Ki/IC50=value  reference  ligand_name
         """
         records = []
-        path = Path(index_path)
-        if not path.exists():
-            raise FileNotFoundError(f"PDBbind index not found: {path}")
-
-        with open(path) as f:
+        with open_path(index_path, "r", storage_options) as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -90,14 +92,15 @@ class AffinityFetcher:
         resolution_col: str = "resolution",
         sequence_col: str = "sequence",
         delimiter: str = ",",
+        storage_options: Optional[dict] = None,
     ) -> list[AffinityRecord]:
         """
-        Load affinity records from a CSV file.
+        Load affinity records from a CSV file (local or remote).
 
         At minimum needs columns for pdb_id and affinity.
         """
         records = []
-        with open(csv_path, newline="") as f:
+        with open_path(csv_path, "r", storage_options) as f:
             reader = csv.DictReader(f, delimiter=delimiter)
             for row in reader:
                 records.append(AffinityRecord(

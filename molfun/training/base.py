@@ -106,6 +106,12 @@ class FinetuneStrategy(ABC):
         val_loader: Optional[DataLoader] = None,
         epochs: int = 10,
         verbose: bool = True,
+        tracker=None,
+        distributed=None,
+        gradient_checkpointing: bool = False,
+        checkpoint_dir: Optional[str] = None,
+        save_every: int = 0,
+        resume_from: Optional[str] = None,
     ) -> list[dict]:
         """
         Run the full training loop.
@@ -115,11 +121,46 @@ class FinetuneStrategy(ABC):
             train_loader: Training data.
             val_loader: Optional validation data.
             epochs: Number of epochs.
+            tracker: Optional BaseTracker for experiment logging.
+            distributed: Optional ``BaseDistributedStrategy`` (DDPStrategy
+                or FSDPStrategy) for multi-GPU training.
+            gradient_checkpointing: Enable activation checkpointing to
+                reduce peak VRAM (~40-60% savings, ~25-35% slower).
+            checkpoint_dir: Directory for saving periodic and best checkpoints.
+                If None, no intermediate checkpoints are saved.
+            save_every: Save a checkpoint every N epochs (0 = only best).
+            resume_from: Path to a checkpoint directory to resume training
+                from. Loads model weights and resumes from the saved epoch.
 
         Returns:
             List of per-epoch metric dicts.
         """
+        from pathlib import Path
+
         self.setup(model)
+
+        if gradient_checkpointing:
+            from molfun.training.checkpointing import apply_gradient_checkpointing
+            n_ckpt = apply_gradient_checkpointing(model.adapter)
+            if verbose:
+                print(f"  Gradient checkpointing: {n_ckpt} modules wrapped")
+
+        if distributed is not None:
+            device = torch.device(f"cuda:{distributed.local_rank}")
+            model.adapter = distributed.wrap_model(model.adapter, device)
+            train_loader = distributed.wrap_loader(
+                train_loader, distributed.local_rank,
+                distributed._world_size if hasattr(distributed, '_world_size') else 1,
+            )
+            if val_loader is not None:
+                val_loader = distributed.wrap_loader(
+                    val_loader, distributed.local_rank,
+                    distributed._world_size if hasattr(distributed, '_world_size') else 1,
+                )
+            model.device = str(device)
+
+        self._distributed = distributed
+
         groups = self.param_groups(model)
         optimizer = torch.optim.AdamW(groups, weight_decay=self.weight_decay)
 
@@ -136,12 +177,36 @@ class FinetuneStrategy(ABC):
         if self.ema_decay > 0:
             self._ema = EMA(all_params, decay=self.ema_decay)
 
+        is_main = self._distributed is None or self._distributed.is_main_process
+
+        # ── Resume from checkpoint ───────────────────────────────────
+        start_epoch = 0
+        if resume_from is not None:
+            resume_path = Path(resume_from)
+            state = self._load_training_state(
+                resume_path, model, optimizer, scheduler, scaler,
+            )
+            start_epoch = state.get("epoch", 0)
+            if verbose and is_main:
+                print(f"  Resumed from epoch {start_epoch} ({resume_path})")
+
+        # ── Checkpoint dir setup ─────────────────────────────────────
+        ckpt_root = Path(checkpoint_dir) if checkpoint_dir else None
+        if ckpt_root is not None and is_main:
+            ckpt_root.mkdir(parents=True, exist_ok=True)
+
+        if tracker is not None and is_main:
+            tracker.log_config(self.describe())
+
         best_val = float("inf")
         patience_counter = 0
         history: list[dict] = []
-        global_step = 0
+        global_step = start_epoch * steps_per_epoch
 
-        for epoch in range(epochs):
+        for epoch in range(start_epoch, epochs):
+            if hasattr(train_loader, "sampler") and hasattr(train_loader.sampler, "set_epoch"):
+                train_loader.sampler.set_epoch(epoch)
+
             model.adapter.train()
             if model.head is not None:
                 model.head.train()
@@ -162,30 +227,107 @@ class FinetuneStrategy(ABC):
                 metrics.update(val_metrics)
 
                 val_loss = val_metrics.get("val_loss", float("inf"))
+
+                # ── Save best model ──────────────────────────────────
+                if val_loss < best_val:
+                    best_val = val_loss
+                    patience_counter = 0
+                    if ckpt_root is not None and is_main:
+                        self._save_training_state(
+                            ckpt_root / "best", model, optimizer,
+                            scheduler, scaler, epoch + 1, best_val,
+                        )
+                elif self.patience > 0:
+                    patience_counter += 1
+
                 if self.patience > 0:
-                    if val_loss < best_val:
-                        best_val = val_loss
-                        patience_counter = 0
-                    else:
-                        patience_counter += 1
                     metrics["patience"] = patience_counter
+
+            # ── Periodic checkpoint ──────────────────────────────────
+            if (
+                ckpt_root is not None
+                and save_every > 0
+                and (epoch + 1) % save_every == 0
+                and is_main
+            ):
+                self._save_training_state(
+                    ckpt_root / f"epoch_{epoch + 1}", model, optimizer,
+                    scheduler, scaler, epoch + 1, best_val,
+                )
 
             history.append(metrics)
 
-            if verbose:
+            if tracker is not None and is_main:
+                tracker.log_metrics(metrics, step=epoch + 1)
+
+            if verbose and is_main:
                 val_str = f"{metrics['val_loss']:.4f}" if "val_loss" in metrics else "   —  "
+                saved = ""
+                if val_loader is not None and metrics.get("val_loss", float("inf")) <= best_val:
+                    saved = "  [best]" if ckpt_root else ""
                 print(
                     f"  Epoch {epoch+1:>3}/{epochs}  "
                     f"train={train_loss:.4f}  val={val_str}  "
-                    f"lr={metrics['lr']:.2e}",
+                    f"lr={metrics['lr']:.2e}{saved}",
                     flush=True,
                 )
 
             if self.patience > 0 and patience_counter >= self.patience:
-                print(f"  Early stopping at epoch {epoch+1}")
+                if is_main:
+                    print(f"  Early stopping at epoch {epoch+1}")
                 break
 
+        # ── Save last checkpoint ─────────────────────────────────────
+        if ckpt_root is not None and is_main:
+            self._save_training_state(
+                ckpt_root / "last", model, optimizer,
+                scheduler, scaler, epoch + 1, best_val,
+            )
+
         return history
+
+    # ------------------------------------------------------------------
+    # Checkpoint save / load
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _save_training_state(
+        path, model, optimizer, scheduler, scaler,
+        epoch: int, best_val: float,
+    ) -> None:
+        """Save full training state for resuming."""
+        from pathlib import Path
+        path = Path(path)
+        path.mkdir(parents=True, exist_ok=True)
+
+        model.save(str(path))
+
+        torch.save({
+            "epoch": epoch,
+            "best_val": best_val,
+            "optimizer": optimizer.state_dict(),
+            "scheduler": scheduler.state_dict(),
+            "scaler": scaler.state_dict(),
+        }, path / "training_state.pt")
+
+    @staticmethod
+    def _load_training_state(
+        path, model, optimizer, scheduler, scaler,
+    ) -> dict:
+        """Load training state to resume training."""
+        from pathlib import Path
+        path = Path(path)
+
+        model.load(str(path))
+
+        state_file = path / "training_state.pt"
+        if state_file.exists():
+            state = torch.load(state_file, map_location=model.device, weights_only=True)
+            optimizer.load_state_dict(state["optimizer"])
+            scheduler.load_state_dict(state["scheduler"])
+            scaler.load_state_dict(state["scaler"])
+            return state
+        return {}
 
     def _compute_loss(
         self,

@@ -2,28 +2,111 @@ from setuptools import setup, find_packages
 
 setup(
     name="molfun",
-    version="0.1.0",
-    description="Optimized Biological Language Models with Triton Kernels",
-    author="Molfun Contributors",
-    packages=find_packages(),
-    python_requires=">=3.8",
+    version="0.2.0",
+    description="Fine-tuning, modular architecture and GPU acceleration for molecular ML models",
+    long_description=open("README.md", encoding="utf-8").read(),
+    long_description_content_type="text/markdown",
+    author="Rubén Cañadas",
+    author_email="rubencr14@gmail.com",
+    url="https://github.com/rubencr14/molfun",
+    project_urls={
+        "Documentation": "https://github.com/rubencr14/molfun#readme",
+        "Bug Tracker": "https://github.com/rubencr14/molfun/issues",
+        "Source": "https://github.com/rubencr14/molfun",
+    },
+    license="Apache-2.0",
+    packages=find_packages(exclude=["tests", "tests.*"]),
+    package_data={"molfun": ["py.typed"]},
+    python_requires=">=3.10",
     install_requires=[
         "torch>=2.0.0",
         "transformers>=4.30.0",
-        "triton>=2.0.0",
         "typer>=0.9.0",
+        "biopython>=1.80",
+        "numpy>=1.24.0",
     ],
     extras_require={
+        "ml": [
+            "scikit-learn>=1.3.0",
+            "joblib>=1.3.0",
+        ],
+        "kernels": [
+            "triton>=2.0.0",
+        ],
+        "openfold": [
+            "dm-tree",
+            "ml-collections",
+        ],
+        "peft": [
+            "peft>=0.6.0",
+        ],
+        "agents": [
+            "openai>=1.0.0",
+        ],
+        "agents-anthropic": [
+            "anthropic>=0.20.0",
+        ],
+        "agents-ollama": [
+            "ollama>=0.1.0",
+        ],
+        "agents-litellm": [
+            "litellm>=1.0.0",
+        ],
+        "streaming": [
+            "fsspec>=2023.1.0",
+            "s3fs>=2023.1.0",
+        ],
+        "wandb": [
+            "wandb>=0.15.0",
+        ],
+        "comet": [
+            "comet-ml>=3.30.0",
+        ],
+        "mlflow": [
+            "mlflow>=2.0.0",
+        ],
+        "langfuse": [
+            "langfuse>=2.0.0",
+        ],
+        "hub": [
+            "huggingface_hub>=0.19.0",
+        ],
+        "export": [
+            "onnx>=1.14.0",
+            "onnxruntime>=1.15.0",
+        ],
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
+            "ruff>=0.4.0",
+        ],
+        "all": [
+            "scikit-learn>=1.3.0",
+            "joblib>=1.3.0",
+            "peft>=0.6.0",
+            "huggingface_hub>=0.19.0",
+            "onnx>=1.14.0",
+            "onnxruntime>=1.15.0",
+            "fsspec>=2023.1.0",
         ],
     },
     entry_points={
         "console_scripts": [
-            "molfun = molfun.cli:app",
+            "molfun=molfun.cli:app",
         ],
     },
-    package_dir={"": "."},
-    package_data={},
+    classifiers=[
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Science/Research",
+        "License :: OSI Approved :: Apache Software License",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Topic :: Scientific/Engineering :: Bio-Informatics",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+        "Operating System :: OS Independent",
+        "Typing :: Typed",
+    ],
 )
