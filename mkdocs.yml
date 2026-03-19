@@ -99,6 +99,10 @@ plugins:
             show_signature_annotations: true
             separate_signature: true
 
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
 extra:
   social:
     - icon: fontawesome/brands/github
@@ -108,6 +112,10 @@ extra:
 
 nav:
   - Home: index.md
+  - Theory:
+    - theory/index.md
+    - Protein Structure Prediction: theory/protein-structure-prediction.md
+    - Fine-Tuning Methods: theory/fine-tuning.md
   - Getting Started:
     - getting-started/index.md
     - Installation: getting-started/installation.md
