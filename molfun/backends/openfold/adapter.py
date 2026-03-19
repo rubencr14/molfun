@@ -110,7 +110,10 @@ class OpenFoldAdapter(BaseAdapter):
 
     def _forward_training(self, batch: dict) -> dict:
         """Forward with patched compute_tm to avoid AMP underflow crash."""
-        from openfold.model import heads as _heads
+        try:
+            from openfold.model import heads as _heads
+        except ImportError:
+            return self.model(batch)
         _orig = _heads.compute_tm
 
         def _safe_compute_tm(logits, **kw):
