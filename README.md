@@ -118,18 +118,25 @@ Additional Triton kernels for model internals: fused LayerNorm, GELU, fused line
 
 Losses are first-class objects registered by name and fully decoupled from heads and training strategies.
 
+### 4. Pluggable Loss Registry
+
+Losses are first-class objects registered by name and fully decoupled from heads and training strategies.
+
 ```python
 from molfun.losses import LOSS_REGISTRY
 
+# Use a built-in loss:
 loss_fn = LOSS_REGISTRY["huber"]()
-result  = loss_fn(preds, targets)
+result  = loss_fn(preds, targets)   # {"affinity_loss": tensor}
 
-# Register a custom loss:
+# Register a custom loss and use it immediately in training:
 from molfun.losses import LossFunction
 
 @LOSS_REGISTRY.register("tmscore")
 class TMScoreLoss(LossFunction):
     def forward(self, preds, targets=None, batch=None): ...
+
+strategy = LoRAFinetune(rank=8, loss_fn="tmscore")
 ```
 
 Built-in losses: `mse`, `mae`, `huber`, `pearson` (affinity) · `openfold` (FAPE + auxiliary structure losses).
@@ -141,7 +148,7 @@ A complete data pipeline for protein fine-tuning tasks:
 - **PDBFetcher** — download structures from RCSB
 - **AffinityFetcher** — parse PDBbind index files or CSV datasets
 - **MSAProvider** — generate or load pre-computed MSAs (single-sequence, A3M, or MMseqs2)
-- **OpenFoldFeaturizer** — convert PDB/mmCIF files to full OpenFold feature dicts
+- **OpenFoldFeaturizer** — convert PDB/mmCIF files to full OpenFold feature dicts (including ground truth coordinates for structure fine-tuning)
 - **StructureDataset / AffinityDataset** — PyTorch datasets with on-the-fly or pre-computed features
 - **DataSplitter** — random, temporal, sequence-identity, or family-based splits
 
@@ -187,9 +194,10 @@ molfun/
 ├── data/            # Datasets, data sources, splits, MSA handling
 ├── kernels/         # Triton GPU kernels (RMSD, contact maps, distances, ...)
 ├── analysis/        # MD trajectory analysis (GPU-accelerated)
-└── cli/             # CLI entry point (molfun structure / affinity / info)
+├── cli/             # CLI entry point (molfun structure / affinity / info)
+└── api/             # FastAPI backend (dashboard integration)
 
-docs/                # Guides and tutorials
+docs/                # Guides (docs/openfold/run.md)
 tests/               # Unit + GPU integration tests
 ```
 
@@ -234,7 +242,6 @@ OpenFold  : installed
 Losses    : huber, mae, mse, openfold, pearson
 Heads     : affinity, structure
 Strategies: lora, partial, full, head_only
-Modules   : 4 attention, 3 blocks, 2 structure_modules, 2 embedders
 ```
 
 ### Fine-Tune on Protein Structures (no labels needed)
@@ -276,39 +283,7 @@ strategy = LoRAFinetune(rank=8, lr_lora=1e-4, lr_head=1e-3, ema_decay=0.999)
 history = model.fit(train_loader, val_loader, strategy=strategy, epochs=30)
 ```
 
-### Build a Custom Architecture
-
-```python
-from molfun.modules.builder import ModelBuilder
-from molfun.models.structure import MolfunStructureModel
-
-built = ModelBuilder(
-    embedder="input",
-    embedder_config={"d_single": 256, "d_pair": 128, "d_msa": 256},
-    block="pairformer",
-    block_config={"d_single": 256, "d_pair": 128, "attention_cls": "flash"},
-    n_blocks=12,
-    structure_module="ipa",
-    structure_module_config={"d_single": 256, "d_pair": 128},
-).build()
-
-model = MolfunStructureModel.from_custom(
-    built, head="affinity", head_config={"single_dim": 256},
-)
-strategy = LoRAFinetune(rank=8, lr_lora=1e-4, lr_head=1e-3)
-history = model.fit(train_loader, val_loader, strategy=strategy, epochs=20)
-```
-
-See [docs/openfold/run.md](docs/openfold/run.md) for the full production fine-tuning guide and [docs/modules.md](docs/modules.md) for the modular architecture tutorial.
-
----
-
-## Documentation
-
-| Guide | Description |
-|-------|-------------|
-| [docs/openfold/run.md](docs/openfold/run.md) | Production fine-tuning guide: strategies, hyperparameters, checkpointing |
-| [docs/modules.md](docs/modules.md) | Modular architecture tutorial: registries, swapping, building, custom modules |
+See [docs/openfold/run.md](docs/openfold/run.md) for the full production guide with hyperparameter recommendations, strategy selection, and deployment instructions.
 
 ---
 
@@ -350,9 +325,6 @@ python -m pytest tests/ -v
 
 # Fine-tuning tests (mock + real GPU)
 python -m pytest tests/training/ tests/models/ -v
-
-# Module tests (attention, blocks, builder, swapper)
-python -m pytest tests/modules/ -v
 ```
 
 ## License
