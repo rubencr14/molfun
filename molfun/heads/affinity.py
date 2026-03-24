@@ -104,6 +104,10 @@ class AffinityHead(nn.Module):
         Returns:
             Predictions: [B, output_dim].
         """
+        # Reduce per-atom mask [B, L, 37, 1] or [B, L, 37] to per-residue [B, L]
+        if mask is not None and mask.dim() > 2:
+            mask = mask.flatten(2).any(dim=-1).float()
+
         single = trunk_output.single_repr  # [B, L, D_s]
 
         # Optionally fuse pair representation
