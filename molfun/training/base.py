@@ -15,6 +15,8 @@ from torch.utils.data import DataLoader
 
 from molfun.helpers.training import EMA, build_scheduler, to_device, unpack_batch
 
+_AMP_DTYPES = {"float16": torch.float16, "bfloat16": torch.bfloat16}
+
 
 class FinetuneStrategy(ABC):
     """
@@ -45,7 +47,11 @@ class FinetuneStrategy(ABC):
         amp: bool = True,
         early_stopping_patience: int = 0,
         loss_fn: str = "mse",
+        amp_dtype: str = "float16",
     ):
+        if amp_dtype not in _AMP_DTYPES:
+            raise ValueError(f"amp_dtype must be one of {sorted(_AMP_DTYPES)}, got {amp_dtype!r}")
+        self.amp_dtype = amp_dtype
         self.lr = lr
         self.weight_decay = weight_decay
         self.warmup_steps = warmup_steps
@@ -174,7 +180,7 @@ class FinetuneStrategy(ABC):
             self.min_lr,
         )
 
-        scaler = torch.amp.GradScaler(enabled=self.amp)
+        scaler = self._make_scaler(model)
 
         all_params = [p for g in groups for p in g["params"]]
         if self.ema_decay > 0:
@@ -420,7 +426,7 @@ class FinetuneStrategy(ABC):
             if mask is not None:
                 mask = mask.to(model.device)
 
-            with torch.amp.autocast("cuda", enabled=self.amp):
+            with self._autocast(model):
                 result = model.forward(batch, mask=mask)
                 losses = self._compute_loss(model, result["preds"], targets, batch)
                 loss = next(iter(losses.values())) / self.accumulation_steps
@@ -491,6 +497,30 @@ class FinetuneStrategy(ABC):
     # Summary
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Mixed precision
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _device_type(model) -> str:
+        return "cuda" if str(model.device).startswith("cuda") else "cpu"
+
+    def _amp_enabled(self, model) -> bool:
+        """AMP runs on CUDA in either dtype, and on CPU only in bfloat16."""
+        return self.amp and (self._device_type(model) == "cuda" or self.amp_dtype == "bfloat16")
+
+    def _make_scaler(self, model) -> torch.amp.GradScaler:
+        """Loss scaling is only needed for float16; bfloat16 has float32's range."""
+        enabled = self._amp_enabled(model) and self.amp_dtype == "float16"
+        return torch.amp.GradScaler(self._device_type(model), enabled=enabled)
+
+    def _autocast(self, model):
+        return torch.amp.autocast(
+            self._device_type(model),
+            dtype=_AMP_DTYPES[self.amp_dtype],
+            enabled=self._amp_enabled(model),
+        )
+
     def describe(self) -> dict:
         return {
             "strategy": type(self).__name__,
@@ -501,5 +531,6 @@ class FinetuneStrategy(ABC):
             "accumulation_steps": self.accumulation_steps,
             "grad_clip": self.grad_clip,
             "amp": self.amp,
+            "amp_dtype": self.amp_dtype,
             "early_stopping_patience": self.patience,
         }

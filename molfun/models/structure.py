@@ -34,6 +34,8 @@ Usage:
 
 from __future__ import annotations
 
+import importlib
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -44,27 +46,45 @@ from torch.utils.data import DataLoader
 from molfun.adapters.base import BaseAdapter
 from molfun.core.types import TrunkOutput
 from molfun.heads.affinity import AffinityHead
+from molfun.heads.generative import GenerativeLossHead
 from molfun.heads.structure import StructureLossHead
 from molfun.training.peft import MolfunPEFT
 
 if TYPE_CHECKING:
     from molfun.training.base import FinetuneStrategy
 
+logger = logging.getLogger(__name__)
 
 ADAPTER_REGISTRY: dict[str, type[BaseAdapter]] = {}
 HEAD_REGISTRY: dict[str, type[nn.Module]] = {
     "affinity": AffinityHead,
     "structure": StructureLossHead,
+    "generative": GenerativeLossHead,
+}
+
+# Built-in backends as "module:Class", imported lazily so a missing optional
+# dependency only disables its own backend.
+_BUILTIN_ADAPTERS: dict[str, str] = {
+    "openfold": "molfun.backends.openfold.adapter:OpenFoldAdapter",
+    "simplefold": "molfun.backends.simplefold.adapter:SimpleFoldAdapter",
 }
 
 
 def _register_adapters():
-    """Lazy registration to avoid import errors for uninstalled backends."""
-    if ADAPTER_REGISTRY:
-        return
-    from molfun.backends.openfold.adapter import OpenFoldAdapter
+    """Register every importable built-in backend not already registered.
 
-    ADAPTER_REGISTRY["openfold"] = OpenFoldAdapter
+    Each backend is registered independently: a custom adapter registered
+    first, or a backend whose dependencies are missing, never prevents the
+    others from being registered.
+    """
+    for name, target in _BUILTIN_ADAPTERS.items():
+        if name in ADAPTER_REGISTRY:
+            continue
+        module_name, class_name = target.split(":")
+        try:
+            ADAPTER_REGISTRY[name] = getattr(importlib.import_module(module_name), class_name)
+        except ImportError as exc:
+            logger.debug("Backend %r unavailable: %s", name, exc)
 
 
 class MolfunStructureModel:
