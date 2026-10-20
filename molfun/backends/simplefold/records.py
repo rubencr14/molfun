@@ -12,6 +12,11 @@ from __future__ import annotations
 import json
 import pickle
 import random
+import shutil
+import subprocess
+import sys
+import time
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
@@ -97,6 +102,98 @@ class SimpleFoldRecordDataset(Dataset):
         features["max_num_tokens"] = torch.tensor(max_num_tokens, dtype=torch.long)
         features["cropped_num_tokens"] = torch.tensor(len(tokenized.tokens), dtype=torch.long)
         return features
+
+
+def _redis_server_binary() -> str | None:
+    found = shutil.which("redis-server")
+    if found:
+        return found
+    candidate = Path(sys.executable).parent / "redis-server"
+    return str(candidate) if candidate.is_file() else None
+
+
+@contextmanager
+def _redis_ccd(ccd_rdb: Path, port: int, timeout: float = 300.0):
+    """Serve the Boltz CCD dump on ``port`` for the duration of the block
+    (read-only: persistence disabled, nothing is written back)."""
+    import redis
+
+    exe = _redis_server_binary()
+    if exe is None:
+        raise FileNotFoundError(
+            "redis-server not found (conda install -c conda-forge redis-server)"
+        )
+    args = [exe, "--dbfilename", ccd_rdb.name, "--dir", str(ccd_rdb.parent), "--port", str(port)]
+    args += ["--save", "", "--appendonly", "no", "--bind", "127.0.0.1"]
+    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    try:
+        client = redis.Redis(host="127.0.0.1", port=port)
+        deadline = time.monotonic() + timeout
+        while True:
+            if proc.poll() is not None:
+                raise RuntimeError(f"redis-server exited: {proc.stderr.read()[-1000:]}")
+            try:
+                if client.ping() and client.dbsize() > 0:
+                    break
+            except (redis.exceptions.ConnectionError, redis.exceptions.BusyLoadingError):
+                pass
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"redis-server did not load {ccd_rdb} within {timeout}s")
+            time.sleep(0.5)
+        yield
+    finally:
+        proc.terminate()
+        proc.wait(timeout=30)
+
+
+def _run_upstream(script: str, *args) -> None:
+    root = import_simplefold().root
+    cmd = [sys.executable, str(root / script), *map(str, args)]
+    result = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"{script} failed: {(result.stderr or result.stdout)[-2000:]}")
+
+
+def prepare_simplefold_records(
+    cif_dir: str | Path,
+    out_dir: str | Path,
+    ccd_rdb: str | Path,
+    port: int = 7777,
+    num_processes: int = 16,
+) -> Path:
+    """Run upstream ``process_mmcif`` (no assemblies) and ``process_structure``.
+
+    Writes ``out_dir/targets``, ``out_dir/tokens`` and
+    ``out_dir/preprocess_report.json`` (inputs, tokenized count, ids that
+    upstream failed to process — it reports per-file failures only on stdout
+    and still exits 0). Returns the tokens dir.
+    A temporary ``redis-server`` serves the CCD while ``process_mmcif`` runs.
+
+    Raises:
+        FileNotFoundError: If ``redis-server`` is not installed.
+        RuntimeError: If no input was turned into a tokenized record.
+    """
+    cif_dir, out_dir, ccd_rdb = Path(cif_dir), Path(out_dir), Path(ccd_rdb)
+    targets, tokens = out_dir / "targets", out_dir / "tokens"
+    with _redis_ccd(ccd_rdb, port):
+        _run_upstream(
+            "process_mmcif.py",
+            "--data_dir", cif_dir, "--out_dir", targets,
+            "--num-processes", num_processes, "--redis-port", port,
+        )  # fmt: skip
+    _run_upstream("process_structure.py", "--target_dir", targets, "--token_dir", tokens)
+
+    inputs = sorted(p.name.split(".")[0].lower() for p in cif_dir.glob("*.cif*"))
+    done = {p.stem for p in (tokens / "tokens").glob("*.pkl")}
+    report = {
+        "n_inputs": len(inputs),
+        "n_tokenized": sum(1 for i in inputs if i in done),
+        "missing": [i for i in inputs if i not in done],
+    }
+    (out_dir / "preprocess_report.json").write_text(json.dumps(report, indent=1))
+    if report["n_tokenized"] == 0:
+        raise RuntimeError(f"no records were produced from {len(inputs)} inputs in {cif_dir}")
+    return tokens
 
 
 def collate_records(items: list[dict]) -> dict:
