@@ -5,59 +5,20 @@ import math
 
 import pytest
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader
 
 import molfun.models.structure as structure_mod
-from molfun.adapters.base import BaseAdapter
-from molfun.core.types import TrunkOutput
 from molfun.models.structure import MolfunStructureModel
 from molfun.training import FullFinetune
+from tests.toy_adapters import ToyGenerativeAdapter
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-
-class _ToyGenerativeAdapter(BaseAdapter):
-    """Two linear blocks; loss = mse term + abs term, reported in extra."""
-
-    def __init__(self, model=None, config=None, weights_path=None, device="cpu"):
-        super().__init__()
-        self.blocks = nn.ModuleList([nn.Linear(4, 4), nn.Linear(4, 4)])
-        self.to(device)
-
-    def forward(self, batch):
-        x = batch["x"]
-        for block in self.blocks:
-            x = block(x)
-        flow = (x.float() ** 2).mean()
-        lddt = x.float().abs().mean()
-        return TrunkOutput(
-            extra={"losses": {"total": flow + lddt, "flow_mse": flow, "smooth_lddt": lddt}}
-        )
-
-    def freeze_trunk(self):
-        for p in self.parameters():
-            p.requires_grad = False
-
-    def unfreeze_trunk(self):
-        for p in self.parameters():
-            p.requires_grad = True
-
-    def get_trunk_blocks(self):
-        return self.blocks
-
-    @property
-    def peft_target_module(self):
-        return self
-
-    def param_summary(self):
-        return {"total": sum(p.numel() for p in self.parameters())}
 
 
 @pytest.fixture
 def toy_model(monkeypatch):
     registry = dict(structure_mod.ADAPTER_REGISTRY)
-    registry["toy_generative"] = _ToyGenerativeAdapter
+    registry["toy_generative"] = ToyGenerativeAdapter
     monkeypatch.setattr(structure_mod, "ADAPTER_REGISTRY", registry)
     return MolfunStructureModel(name="toy_generative", device=DEVICE, head="generative")
 

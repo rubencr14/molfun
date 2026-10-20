@@ -449,7 +449,8 @@ class MolfunStructureModel:
     # ------------------------------------------------------------------
 
     def save(self, path: str) -> None:
-        """Save PEFT adapters + head weights."""
+        """Save PEFT adapters + head weights; without PEFT, also the trainable
+        trunk parameters (``trunk.pt``) so full and partial fine-tunes survive."""
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
 
@@ -460,18 +461,46 @@ class MolfunStructureModel:
 
         if self._peft is not None:
             self._peft.save(str(path / "peft_adapter"))
+        else:
+            trunk = {
+                name: p.detach().cpu()
+                for name, p in self.adapter.named_parameters()
+                if p.requires_grad
+            }
+            if trunk:
+                torch.save(trunk, path / "trunk.pt")
         if self.head is not None:
             torch.save(self.head.state_dict(), path / "head.pt")
 
     def load(self, path: str) -> None:
-        """Load PEFT adapters + head weights."""
+        """Load PEFT adapters, trunk parameters and head weights saved by ``save()``.
+
+        Raises:
+            RuntimeError: If ``trunk.pt`` holds parameters this adapter does not
+                have, or with different shapes (lists them).
+        """
         path = Path(path)
         if self._peft is not None and (path / "peft_adapter").exists():
             self._peft.load(str(path / "peft_adapter"))
+        if (path / "trunk.pt").exists():
+            self._load_trunk(torch.load(path / "trunk.pt", map_location="cpu", weights_only=True))
         if self.head is not None and (path / "head.pt").exists():
             self.head.load_state_dict(
                 torch.load(path / "head.pt", map_location=self.device, weights_only=True)
             )
+
+    def _load_trunk(self, trunk: dict[str, torch.Tensor]) -> None:
+        params = dict(self.adapter.named_parameters())
+        unexpected = sorted(k for k in trunk if k not in params)
+        mismatched = sorted(k for k in trunk if k in params and params[k].shape != trunk[k].shape)
+        if unexpected or mismatched:
+            raise RuntimeError(
+                f"trunk.pt does not match this adapter: unexpected={unexpected}, "
+                f"shape_mismatch={mismatched}"
+            )
+        with torch.no_grad():
+            for name, value in trunk.items():
+                params[name].copy_(value.to(params[name].device))
 
     # ------------------------------------------------------------------
     # Merge / info
