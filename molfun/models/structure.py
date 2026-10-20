@@ -44,7 +44,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from molfun.adapters.base import BaseAdapter
-from molfun.core.types import TrunkOutput
+from molfun.core.types import SampledStructure, TrunkOutput
 from molfun.heads.affinity import AffinityHead
 from molfun.heads.generative import GenerativeLossHead
 from molfun.heads.structure import StructureLossHead
@@ -392,6 +392,20 @@ class MolfunStructureModel:
         if self.head is not None:
             result["preds"] = self.head(trunk_output, mask=mask, batch=batch)
         return result
+
+    def sample(self, sequence: str, **kwargs) -> list[SampledStructure]:
+        """Sample structures for a sequence with a generative backend.
+
+        Keyword arguments go to the adapter's ``sample`` (e.g. ``num_samples``,
+        ``num_steps``, ``seed``).
+
+        Raises:
+            NotImplementedError: If the backend is not generative.
+        """
+        sample = getattr(self.adapter, "sample", None)
+        if sample is None:
+            raise NotImplementedError(f"backend '{self.name}' does not support sampling")
+        return sample(sequence, **kwargs)
 
     # ------------------------------------------------------------------
     # Training

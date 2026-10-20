@@ -16,6 +16,8 @@ class SimpleFoldConfig:
         multiplicity: Noise copies per structure in each training step.
         num_steps: Sampler steps at inference.
         tau: Sampler diffusion coefficient scaling.
+        cache_dir: Where the Boltz CCD dictionary (``ccd.pkl``, ~350 MB) is
+            kept for building inputs from sequences.
     """
 
     architecture: str = "foldingdit_100M"
@@ -23,3 +25,4 @@ class SimpleFoldConfig:
     multiplicity: int = 16
     num_steps: int = 500
     tau: float = 0.1
+    cache_dir: str = "~/.molfun/simplefold"

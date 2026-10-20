@@ -48,6 +48,7 @@ def import_simplefold() -> SimpleNamespace:
         from boltz_data_pipeline.feature.featurizer import BoltzFeaturizer
         from boltz_data_pipeline.tokenize.boltz_protein import BoltzTokenizer
         from boltz_data_pipeline.types import Input, Record, Structure
+        from boltz_data_pipeline.write.mmcif import to_mmcif
         from model.flow import LinearPath
         from model.simplefold import SimpleFold
         from model.torch.sampler import EMSampler
@@ -60,7 +61,7 @@ def import_simplefold() -> SimpleNamespace:
             process_one_inference_structure,
         )
         from utils.esm_utils import _af2_to_esm, esm_registry
-        from utils.fasta_utils import download_fasta_utilities, process_fastas
+        from utils.fasta_utils import CCD_URL, process_fastas
     finally:
         if previous_datasets is not None:
             sys.modules["datasets"] = previous_datasets
@@ -79,8 +80,8 @@ def import_simplefold() -> SimpleNamespace:
         SimpleFold=SimpleFold,
         Structure=Structure,
         af2_to_esm=_af2_to_esm,
+        ccd_url=CCD_URL,
         collate=collate,
-        download_fasta_utilities=download_fasta_utilities,
         esm_registry=esm_registry,
         extract_sequence_from_tokens=extract_sequence_from_tokens,
         load_input=load_input,
@@ -88,4 +89,5 @@ def import_simplefold() -> SimpleNamespace:
         process_one_inference_structure=process_one_inference_structure,
         process_structure=process_structure,
         save_structure=save_structure,
+        to_mmcif=to_mmcif,
     )

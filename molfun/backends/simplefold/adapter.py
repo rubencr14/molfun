@@ -13,7 +13,10 @@ molfun's strategies keep their own EMA.
 
 from __future__ import annotations
 
+import copy
 import math
+import tempfile
+import urllib.request
 from pathlib import Path
 
 import torch
@@ -22,7 +25,7 @@ import torch.nn as nn
 from molfun.adapters.base import BaseAdapter
 from molfun.backends.simplefold.config import SimpleFoldConfig
 from molfun.backends.simplefold.imports import import_simplefold
-from molfun.core.types import TrunkOutput
+from molfun.core.types import SampledStructure, TrunkOutput
 
 _LOG_TO_LOSS = {"loss/mse": "flow_mse", "loss/smooth_lddt": "smooth_lddt"}
 
@@ -127,6 +130,88 @@ class SimpleFoldAdapter(BaseAdapter):
         super().train(mode)
         self.sf.esm_model.eval()
         return self
+
+    # ------------------------------------------------------------------
+    # Sampling
+    # ------------------------------------------------------------------
+
+    @torch.no_grad()
+    def sample(
+        self,
+        sequence: str,
+        num_samples: int = 5,
+        num_steps: int | None = None,
+        tau: float | None = None,
+        seed: int = 0,
+    ) -> list[SampledStructure]:
+        """Sample structures for one protein sequence.
+
+        The input is built from the sequence alone (upstream's FASTA path, in
+        a temporary directory), never from an experimental structure. Uses
+        the current weights in eval mode; the previous mode is restored.
+        """
+        sf = import_simplefold()
+        steps = num_steps or self.config.num_steps
+        tau = self.config.tau if tau is None else tau
+        was_training = self.training
+        self.eval()
+        try:
+            with tempfile.TemporaryDirectory(prefix="molfun-simplefold-") as tmp:
+                work = Path(tmp)
+                fasta = work / "query.fasta"
+                fasta.write_text(f">A|protein\n{sequence}\n")
+                sf.process_fastas(data=[fasta], out_dir=work, ccd_path=self._ccd_path())
+
+                processor = sf.ProteinDataProcessor(
+                    device=self._device,
+                    scale=16.0,
+                    ref_scale=5.0,
+                    multiplicity=1,
+                    inference_multiplicity=num_samples,
+                )
+                batch, structure, record = sf.process_one_inference_structure(
+                    work / "structures" / "query.npz",
+                    work / "records" / "query.json",
+                    sf.BoltzTokenizer(),
+                    sf.BoltzFeaturizer(),
+                    processor,
+                    self.sf.esm_model,
+                    self.sf.esm_dict,
+                    self.sf.af2_to_esm,
+                )
+                sampler = sf.EMSampler(
+                    num_timesteps=steps, t_start=1e-4, tau=tau, log_timesteps=True, w_cutoff=0.99
+                )
+                torch.manual_seed(seed)
+                noise = torch.randn_like(batch["coords"])
+                out = processor.postprocess(
+                    sampler.sample(self.sf.model, sf.LinearPath(), noise, batch), batch
+                )
+                coords = out["denoised_coords"].detach()
+                pad_mask = batch["atom_pad_mask"]
+                return [
+                    SampledStructure(
+                        sequence=sequence,
+                        mmcif=sf.to_mmcif(
+                            sf.process_structure(
+                                copy.deepcopy(structure), coords[i], pad_mask[i], record
+                            )
+                        ),
+                    )
+                    for i in range(num_samples)
+                ]
+        finally:
+            self.train(was_training)
+
+    def _ccd_path(self) -> Path:
+        """Boltz CCD dictionary used to build inputs from sequences (downloaded once)."""
+        path = Path(self.config.cache_dir).expanduser() / "ccd.pkl"
+        if not path.is_file():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            partial = path.with_suffix(".pkl.part")
+            urllib.request.urlretrieve(import_simplefold().ccd_url, partial)
+            partial.rename(path)
+        return path
 
     # ------------------------------------------------------------------
     # BaseAdapter contract
