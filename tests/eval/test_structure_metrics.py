@@ -70,6 +70,42 @@ def test_tm_score_identical_is_one():
     assert tm_score(x @ _rotation().T, x) == pytest.approx(1.0, abs=1e-3)
 
 
+def _akt1_ca():
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "fixtures" / "kinase" / "3mvh_A.cif.gz"
+    chain = gemmi.read_structure(str(path))[0][0]
+    return np.array([[a.pos.x, a.pos.y, a.pos.z] for r in chain for a in r if a.name == "CA"])
+
+
+def test_tm_score_uses_the_residue_pairing():
+    """A prediction shifted by one residue along the chain is a wrong
+    prediction; TM-align would re-align it and score ~1."""
+    from tmtools import tm_align
+
+    ca = _akt1_ca()
+    shifted, ref = ca[1:], ca[:-1]  # residue i predicted at residue i+1's place
+    realigned = tm_align(shifted, ref, "A" * len(ref), "A" * len(ref)).tm_norm_chain2
+
+    assert realigned > 0.95
+    assert tm_score(shifted, ref) < 0.75
+    assert tm_score(ca, ca) == pytest.approx(1.0)
+
+
+def test_tm_score_partial_match_scores_between():
+    """Half the chain right, half displaced by 10 Å. Superposing the right half
+    alone gives 0.5 + 0.5 / (1 + (10 / d0)²) with d0 = 1.24·(L−15)^⅓ − 1.8, so
+    the TM-score is at least that, and clearly below a correct prediction.
+    (A real kinase chain: an ideal helix would partly re-superpose by symmetry.)"""
+    ca = _akt1_ca()
+    pred = ca.copy()
+    pred[len(ca) // 2 :] += np.array([10.0, 0.0, 0.0])
+    d0 = 1.24 * (len(ca) - 15) ** (1 / 3) - 1.8
+    lower = 0.5 + 0.5 / (1 + (10 / d0) ** 2)
+
+    assert lower - 1e-6 <= tm_score(pred, ca) < 0.9
+
+
 def _ca_mmcif(coords: np.ndarray, present: list[int]) -> str:
     """mmCIF with one chain A of ALA residues; residue i has label_seq i+1."""
     st = gemmi.Structure()

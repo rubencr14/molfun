@@ -40,6 +40,7 @@ class ClusterSplit:
     heldout_ids: list[str]
     dropped_ids: list[str]
     report: dict = field(default_factory=dict)
+    cluster_of: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -110,7 +111,22 @@ def split_by_clusters(
         "coverage": coverage,
         "leak_rule": LEAK_RULE,
     }
-    return ClusterSplit(train, held, dropped, report)
+    return ClusterSplit(train, held, dropped, report, cluster_of=merged)
+
+
+def write_split_files(
+    out_dir: Path, split: ClusterSplit, targets: pd.DataFrame, groups: dict, report: dict
+) -> None:
+    """Write the split: ``train_ids.json``, ``heldout_ids.json`` (held-out
+    chains kept after the leakage drop), ``clusters.json`` (id → merged
+    cluster), ``uniprot_groups.json``, ``leakage_report.json``, ``eval_targets.csv``."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "train_ids.json").write_text(json.dumps(split.train_ids))
+    (out_dir / "heldout_ids.json").write_text(json.dumps(split.heldout_ids))
+    (out_dir / "clusters.json").write_text(json.dumps(split.cluster_of, sort_keys=True))
+    (out_dir / "uniprot_groups.json").write_text(json.dumps(groups, indent=1, sort_keys=True))
+    (out_dir / "leakage_report.json").write_text(json.dumps(report, indent=2, default=str))
+    targets.to_csv(out_dir / "eval_targets.csv", index=False)
 
 
 def select_eval_targets(rows: pd.DataFrame, per_uniprot: int = 2) -> pd.DataFrame:
@@ -185,7 +201,8 @@ def build_pilot_split(
     """Extract chains, split them leakage-safely and write the split files.
 
     Writes into ``out_dir``: ``chains/<id>.cif``, ``train_ids.json``,
-    ``eval_targets.csv``, ``uniprot_groups.json``, ``leakage_report.json``.
+    ``eval_targets.csv``, ``uniprot_groups.json``, ``leakage_report.json``,
+    ``heldout_ids.json``, ``clusters.json`` (see :func:`write_split_files`).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     chains_dir = out_dir / "chains"
@@ -230,10 +247,7 @@ def build_pilot_split(
         "eval_states": targets.groupby(["dfg", "ac_helix"]).size().rename("n").reset_index().to_dict("records"),
         "dropped_for_leakage": split.dropped_ids,
     }  # fmt: skip
-    (out_dir / "train_ids.json").write_text(json.dumps(split.train_ids))
-    (out_dir / "uniprot_groups.json").write_text(json.dumps(groups, indent=1, sort_keys=True))
-    (out_dir / "leakage_report.json").write_text(json.dumps(report, indent=2, default=str))
-    targets.to_csv(out_dir / "eval_targets.csv", index=False)
+    write_split_files(out_dir, split, targets, groups, report)
     return PilotSplit(split.train_ids, targets, report)
 
 

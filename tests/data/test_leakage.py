@@ -55,6 +55,21 @@ def test_leakage_hits_flags_close_homolog():
 
 
 @needs_mmseqs
+def test_leakage_hits_finds_homolog_crowded_out_by_decoys():
+    """1,100 decoys share a 60-residue exact segment with the query, so they
+    outrank the real homolog (55% over 120 residues) in a prefilter; the
+    homolog must still be found — a candidate cap must not hide it."""
+    rng = random.Random(3)
+    query = _random_seq(rng, 120)
+    train = {f"decoy{i}": query[:60] + _random_seq(rng, 90) for i in range(1100)}
+    train["homolog"] = _mutate(rng, query, 0.55)
+
+    hits = leakage_hits({"q": query}, train)
+
+    assert "homolog" in set(hits["target"])
+
+
+@needs_mmseqs
 def test_leakage_hits_ignores_short_alignments():
     rng = random.Random(2)
     shared = _random_seq(rng, 40)

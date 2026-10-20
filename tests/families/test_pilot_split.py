@@ -7,7 +7,12 @@ import pandas as pd
 import pytest
 
 from molfun.data.leakage import leakage_hits
-from molfun.families.kinase.pilot_split import select_eval_targets, split_by_clusters
+from molfun.families.kinase.pilot_split import (
+    ClusterSplit,
+    select_eval_targets,
+    split_by_clusters,
+    write_split_files,
+)
 
 AA = "ACDEFGHIKLMNPQRSTVWY"
 needs_mmseqs = pytest.mark.skipif(shutil.which("mmseqs") is None, reason="needs mmseqs")
@@ -43,6 +48,28 @@ def test_pilot_split_no_leak():
     assert not {uniprot_of[s] for s in train} & {uniprot_of[s] for s in held}
     assert leakage_hits({s: seqs[s] for s in held}, {s: seqs[s] for s in train}).empty
     assert split.report["n_heldout_structures"] == len(held)
+    assert set(split.cluster_of) == set(seqs)
+
+
+def test_write_split_files_saves_heldout_and_clusters(tmp_path):
+    import json
+
+    split = ClusterSplit(
+        train_ids=["a"],
+        heldout_ids=["b"],
+        dropped_ids=["c"],
+        report={"n": 3},
+        cluster_of={"a": "A", "b": "B", "c": "B"},
+    )
+    targets = pd.DataFrame({"structure_id": ["b"], "uniprot": ["P2"]})
+
+    write_split_files(tmp_path, split, targets, {"P1": ["a"]}, {"n": 3})
+
+    assert json.loads((tmp_path / "train_ids.json").read_text()) == ["a"]
+    assert json.loads((tmp_path / "heldout_ids.json").read_text()) == ["b"]
+    assert json.loads((tmp_path / "clusters.json").read_text()) == {"a": "A", "b": "B", "c": "B"}
+    assert json.loads((tmp_path / "uniprot_groups.json").read_text()) == {"P1": ["a"]}
+    assert list(pd.read_csv(tmp_path / "eval_targets.csv")["structure_id"]) == ["b"]
 
 
 @needs_mmseqs

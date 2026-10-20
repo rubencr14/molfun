@@ -96,7 +96,11 @@ def leakage_hits(
     threads: int = 8,
 ) -> pd.DataFrame:
     """Alignments from test to train with identity ≥ ``max_identity`` over
-    ≥ ``min_aln_len`` residues (columns: query, target, identity, aln_len)."""
+    ≥ ``min_aln_len`` residues (columns: query, target, identity, aln_len).
+
+    Every query is aligned against every training sequence (exhaustive
+    search, no candidate cap): a capped prefilter can rank thousands of
+    near-miss sequences above a real homolog and hide it."""
     if not test or not train:
         return pd.DataFrame(columns=_HIT_COLUMNS)
     exe = _require(mmseqs)
@@ -109,7 +113,8 @@ def leakage_hits(
             [
                 exe, "easy-search", str(work / "test.fasta"), str(work / "train.fasta"), str(out),
                 str(work / "tmp"), "--format-output", "query,target,fident,alnlen",
-                "-s", "7.5", "-e", "10", "--max-seqs", "1000", "--threads", str(threads), "-v", "1",
+                "--exhaustive-search", "1", "--max-seqs", str(len(train)), "-e", "10",
+                "--threads", str(threads), "-v", "1",
             ]
         )  # fmt: skip
         if not out.exists() or out.stat().st_size == 0:

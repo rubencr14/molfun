@@ -19,6 +19,20 @@ from types import SimpleNamespace
 _TOPLEVEL = ("model", "utils", "processor", "boltz_data_pipeline")
 
 
+def _origin(module) -> str:
+    """File of a module, or first search path of a (namespace) package."""
+    origin = getattr(module, "__file__", None)
+    if origin:
+        return origin
+    paths = list(getattr(module, "__path__", []) or [])
+    return paths[0] if paths else ""
+
+
+def _is_under(module, root: Path) -> bool:
+    origin = _origin(module)
+    return bool(origin) and Path(origin).resolve().is_relative_to(root)
+
+
 @functools.lru_cache(maxsize=1)
 def import_simplefold() -> SimpleNamespace:
     """Return the upstream SimpleFold symbols used by the molfun backend.
@@ -35,11 +49,13 @@ def import_simplefold() -> SimpleNamespace:
     root = Path(simplefold.__file__).resolve().parent
     for name in _TOPLEVEL:
         module = sys.modules.get(name)
-        origin = getattr(module, "__file__", None) or ""
-        if module is not None and not str(Path(origin).resolve()).startswith(str(root)):
-            raise ImportError(f"top-level module {name!r} is already imported from {origin}")
+        if module is not None and not _is_under(module, root):
+            raise ImportError(
+                f"top-level module {name!r} is already imported from {_origin(module)}"
+            )
 
-    if str(root) not in sys.path:
+    added = str(root) not in sys.path
+    if added:
         sys.path.insert(0, str(root))
 
     previous_datasets = sys.modules.get("datasets")
@@ -63,8 +79,16 @@ def import_simplefold() -> SimpleNamespace:
         from utils.esm_utils import _af2_to_esm, esm_registry
         from utils.fasta_utils import CCD_URL, process_fastas
     finally:
+        # The imported packages stay cached in sys.modules (their submodules
+        # resolve through the package __path__), so the source dir can leave
+        # sys.path and later top-level imports (e.g. HF ``datasets``) are not shadowed.
+        if added:
+            sys.path.remove(str(root))
+        current = sys.modules.get("datasets")
         if previous_datasets is not None:
             sys.modules["datasets"] = previous_datasets
+        elif current is not None and _is_under(current, root):
+            del sys.modules["datasets"]
 
     return SimpleNamespace(
         root=root,

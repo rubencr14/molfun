@@ -2,6 +2,7 @@
 (tests/fixtures/simplefold/tiny_arch.yaml) and the processed 1CRN record."""
 
 import math
+import subprocess
 import sys
 from pathlib import Path
 
@@ -46,6 +47,27 @@ def test_imports_coexist_with_hf_datasets():
 
     assert sys.modules["datasets"] is hf
     assert hasattr(ns, "SimpleFold")
+
+
+def test_hf_datasets_still_importable_after_simplefold():
+    """SimpleFold first, HuggingFace datasets second (fresh interpreter): the
+    later import must resolve to HuggingFace, and SimpleFold's source dir
+    must not stay on sys.path."""
+    pytest.importorskip("datasets")
+    code = (
+        "import sys\n"
+        "from molfun.backends.simplefold.imports import import_simplefold\n"
+        "ns = import_simplefold()\n"
+        "import datasets\n"
+        "assert hasattr(datasets, 'load_dataset'), datasets.__file__\n"
+        "assert str(ns.root) not in sys.path\n"
+        "print('ok')\n"
+    )
+
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr[-1500:]
+    assert result.stdout.strip().endswith("ok")
 
 
 def test_only_architecture_is_trainable(adapter):

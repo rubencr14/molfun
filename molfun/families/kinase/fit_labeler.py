@@ -64,6 +64,19 @@ def compute_features(
     return pd.DataFrame(found, columns=None if found else ["structure_id"])
 
 
+def heldout_ids(split_dir: Path) -> set[str]:
+    """Held-out chain ids saved by the split (``heldout_ids.json``).
+
+    Raises:
+        FileNotFoundError: If the split predates ``heldout_ids.json``
+            (rebuild it with ``python -m molfun.families.kinase.pilot_split``).
+    """
+    path = split_dir / "heldout_ids.json"
+    if not path.is_file():
+        raise FileNotFoundError(f"{path} missing; rebuild the split (pilot_split) to write it")
+    return set(json.loads(path.read_text()))
+
+
 def fit_and_validate(
     table: pd.DataFrame, split_dir: Path, pocket_dir: Path, out_path: Path, workers: int = 16
 ) -> dict:
@@ -74,11 +87,7 @@ def fit_and_validate(
 
     chains_dir = split_dir / "chains"
     train_ids = set(json.loads((split_dir / "train_ids.json").read_text()))
-    dropped = set(
-        json.loads((split_dir / "leakage_report.json").read_text())["dropped_for_leakage"]
-    )
-    extracted = {p.stem for p in chains_dir.glob("*.cif")}
-    held_ids = extracted - train_ids - dropped
+    held_ids = heldout_ids(split_dir)
 
     labels = table.set_index("structure_id")[["dfg", "ac_helix"]]
     train_rows = table[table["structure_id"].isin(train_ids)]
