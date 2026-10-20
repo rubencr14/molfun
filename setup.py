@@ -84,6 +84,7 @@ setup(
             "mashumaro>=3.0",
             "fair-esm>=2.0",
             "python-dotenv>=1.0",
+            "fairscale>=0.4",
             "pandas>=2.0",
             "scikit-learn>=1.3",
         ],

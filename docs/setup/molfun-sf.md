@@ -13,6 +13,7 @@ git -C ~/Escritorio/projects/simplefold-molfun checkout -B molfun/pin 62f1a225ec
 conda activate molfun-sf
 pip install "lightning==2.5.2" hydra-core hydra-colorlog mashumaro ihm modelcif \
     dm-tree p-tqdm timm biotite tmtools python-dotenv
+pip install --no-deps fairscale   # imported by upstream model/simplefold.py
 pip install --no-deps -e ~/Escritorio/projects/simplefold-molfun
 pip install --no-deps -e .            # molfun itself
 conda install -y -c conda-forge redis-server
@@ -51,6 +52,7 @@ See `.env.example`: `MOLFUN_KINASE_DATA`, `MOLFUN_WORK_DIR`,
 | timm | 1.0.30 |
 | biotite | 1.0.1 |
 | mashumaro | 3.23 |
+| fairscale | 0.4.13 (installed --no-deps) |
 | redis-server | 8.10.2 (conda-forge) |
 
 Note: the env also contains HuggingFace `datasets` (inherited from `nomosis`),

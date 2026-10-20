@@ -78,6 +78,19 @@ _register(
     )
 )
 
+_register(
+    PretrainedSpec(
+        name="simplefold_100M",
+        backend="simplefold",
+        description="Apple SimpleFold 100M (FoldingDiT trunk, frozen ESM2-3B conditioning)",
+        weights_url="https://ml-site.cdn-apple.com/models/simplefold/simplefold_100M.ckpt",
+        weights_filename="simplefold_100M.ckpt",
+        config_preset="foldingdit_100M",
+        sha256="4cd0b8a0b317a6ab8634444fffd78ce84cfd49c20fe927b83c76c36fda5f54bd",
+        size_mb=387,
+    )
+)
+
 
 def list_pretrained() -> list[PretrainedSpec]:
     """Return all registered pretrained models."""
@@ -144,6 +157,10 @@ def get_config(name: str):
 
     if spec.backend == "openfold":
         return _get_openfold_config(spec.config_preset, **spec.config_kwargs)
+    elif spec.backend == "simplefold":
+        from molfun.backends.simplefold.config import SimpleFoldConfig
+
+        return SimpleFoldConfig(architecture=spec.config_preset, **spec.config_kwargs)
     else:
         raise ValueError(f"Config builder not implemented for backend '{spec.backend}'")
 
