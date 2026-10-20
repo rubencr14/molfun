@@ -44,14 +44,25 @@ class SimpleFoldRecordDataset(Dataset):
             groups: Group name → record ids.
             max_tokens: Crop size in residues.
             max_atoms: Crop size in atoms.
+
+        Records without a valid chain (rejected by upstream's quality filters)
+        are left out and listed in ``skipped_ids``; groups left empty are dropped.
         """
         if not groups or any(not ids for ids in groups.values()):
             raise ValueError("groups must be non-empty and every group needs at least one record")
         self._sf = import_simplefold()
         self.tokenized_dir = Path(tokenized_dir)
         self.target_dir = Path(target_dir)
-        self.group_names = list(groups)
-        self.group_members = [list(ids) for ids in groups.values()]
+        valid = {
+            i for ids in groups.values() for i in ids if has_valid_chain(self.tokenized_dir, i)
+        }
+        kept = {name: [i for i in ids if i in valid] for name, ids in groups.items()}
+        kept = {name: ids for name, ids in kept.items() if ids}
+        if not kept:
+            raise ValueError("no group has a record with a valid chain")
+        self.skipped_ids = sorted({i for ids in groups.values() for i in ids} - valid)
+        self.group_names = list(kept)
+        self.group_members = list(kept.values())
         self.max_tokens = max_tokens
         self.max_atoms = max_atoms
         self._tokenizer = self._sf.BoltzTokenizer()
@@ -185,15 +196,29 @@ def prepare_simplefold_records(
 
     inputs = sorted(p.name.split(".")[0].lower() for p in cif_dir.glob("*.cif*"))
     done = {p.stem for p in (tokens / "tokens").glob("*.pkl")}
+    tokenized = [i for i in inputs if i in done]
+    invalid = [i for i in tokenized if not has_valid_chain(tokens, i)]
     report = {
         "n_inputs": len(inputs),
-        "n_tokenized": sum(1 for i in inputs if i in done),
+        "n_tokenized": len(tokenized),
+        "n_valid": len(tokenized) - len(invalid),
         "missing": [i for i in inputs if i not in done],
+        "invalid": invalid,
     }
     (out_dir / "preprocess_report.json").write_text(json.dumps(report, indent=1))
     if report["n_tokenized"] == 0:
         raise RuntimeError(f"no records were produced from {len(inputs)} inputs in {cif_dir}")
     return tokens
+
+
+def has_valid_chain(tokenized_dir: str | Path, record_id: str) -> bool:
+    """Whether a tokenized record kept any chain (upstream's tokenization
+    drops chains its quality filters marked invalid, e.g. ConsecutiveCA)."""
+    path = Path(tokenized_dir) / "records" / f"{record_id.lower()}.json"
+    if not path.is_file():
+        return False
+    chains = json.loads(path.read_text()).get("chains", [])
+    return any(chain.get("valid", True) for chain in chains)
 
 
 def collate_records(items: list[dict]) -> dict:

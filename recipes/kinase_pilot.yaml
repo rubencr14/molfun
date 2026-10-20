@@ -1,0 +1,29 @@
+# Kinase pilot: fine-tune SimpleFold-100M on KLIFS kinase chains and compare
+# with the base model on held-out kinase families (see
+# docs/superpowers/specs/2026-10-20-kinase-experts-design.md, milestone P).
+# Paths come from .env (MOLFUN_KINASE_DATA, MOLFUN_WORK_DIR).
+
+model: simplefold_100M
+
+train:
+  strategy: full            # FullFinetune of the 100M trunk; ESM2-3B stays frozen
+  lr: 2.0e-5
+  layer_lr_decay: 1.0
+  warmup_steps: 200
+  scheduler: cosine
+  ema_decay: 0.999
+  grad_clip: 2.0
+  amp_dtype: bfloat16
+  epochs: 100               # one sample per training UniProt per epoch (~0.23 s/step on the 5090)
+  max_tokens: 256           # crop size (residues)
+  num_workers: 8
+  seed: 0
+
+sample:
+  num_samples: 5
+  num_steps: 500            # upstream default
+  tau: 0.1
+
+eval:
+  state_lddt_threshold: 0.7 # a sample recovers the state if its label matches and lDDT >= this
+  bootstrap: 2000

@@ -59,6 +59,62 @@ def test_prepare_records_from_extracted_chain(tmp_path):
     assert dataset[0]["aa_seq"] == CRAMBIN
 
 
+def _broken_chain(src, out):
+    """1CRN chain A with residue 10 moved 20 Å away: upstream's ConsecutiveCA
+    quality filter marks such a chain invalid (no tokens after tokenization)."""
+    import gemmi
+
+    st = gemmi.read_structure(str(src))
+    for atom in st[0][0][9]:
+        atom.pos = gemmi.Position(atom.pos.x + 20.0, atom.pos.y, atom.pos.z)
+    doc = st.make_mmcif_document()
+    doc.write_file(str(out))
+
+
+@needs_redis
+def test_prepare_records_counts_chains_failing_upstream_filters(tmp_path):
+    import json
+
+    from molfun.backends.simplefold.records import prepare_simplefold_records
+
+    (tmp_path / "cif").mkdir()
+    extract_chain(RAW / "1crn.cif.gz", "A", tmp_path / "cif" / "7.cif")
+    _broken_chain(tmp_path / "cif" / "7.cif", tmp_path / "cif" / "9.cif")
+
+    prepare_simplefold_records(
+        tmp_path / "cif", tmp_path / "rec", _ccd_rdb(), port=_free_port(), num_processes=1
+    )
+
+    report = json.loads((tmp_path / "rec" / "preprocess_report.json").read_text())
+    assert report["n_tokenized"] == 2
+    assert report["n_valid"] == 1
+    assert report["invalid"] == ["9"]
+
+
+@needs_redis
+def test_dataset_skips_records_without_valid_chains(tmp_path):
+    from molfun.backends.simplefold.records import (
+        SimpleFoldRecordDataset,
+        prepare_simplefold_records,
+    )
+
+    (tmp_path / "cif").mkdir()
+    extract_chain(RAW / "1crn.cif.gz", "A", tmp_path / "cif" / "7.cif")
+    _broken_chain(tmp_path / "cif" / "7.cif", tmp_path / "cif" / "9.cif")
+    tokens = prepare_simplefold_records(
+        tmp_path / "cif", tmp_path / "rec", _ccd_rdb(), port=_free_port(), num_processes=1
+    )
+
+    ds = SimpleFoldRecordDataset(
+        tokens, tmp_path / "rec" / "targets", {"mixed": ["7", "9"], "only_invalid": ["9"]}
+    )
+
+    assert len(ds) == 1
+    assert ds.group_members == [["7"]]
+    assert ds.skipped_ids == ["9"]
+    assert ds[0]["aa_seq"] == CRAMBIN
+
+
 @needs_redis
 def test_prepare_records_reports_unparsed_inputs(tmp_path):
     """Upstream prints a traceback per failed file and exits 0; molfun must
