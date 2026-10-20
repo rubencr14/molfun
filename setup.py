@@ -75,6 +75,18 @@ setup(
             "onnx>=1.14.0",
             "onnxruntime>=1.15.0",
         ],
+        "simplefold": [
+            "gemmi>=0.7",
+            "tmtools>=0.2",
+            "hydra-core>=1.3",
+            "lightning==2.5.2",
+            "einops>=0.8",
+            "mashumaro>=3.0",
+            "fair-esm>=2.0",
+            "python-dotenv>=1.0",
+            "pandas>=2.0",
+            "scikit-learn>=1.3",
+        ],
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
