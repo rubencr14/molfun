@@ -35,6 +35,7 @@ Usage:
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -475,6 +476,15 @@ class MolfunStructureModel:
 
         if self._peft is not None:
             self._peft.save(str(path / "peft_adapter"))
+            (path / "peft_config.json").write_text(
+                json.dumps(
+                    {
+                        "method": self._peft.method,
+                        "config": self._peft.config,
+                        "use_hf": self._peft.use_hf,
+                    }
+                )
+            )
         else:
             trunk = {
                 name: p.detach().cpu()
@@ -489,12 +499,18 @@ class MolfunStructureModel:
     def load(self, path: str) -> None:
         """Load PEFT adapters, trunk parameters and head weights saved by ``save()``.
 
+        A PEFT checkpoint loads into a fresh model too: the adapter is rebuilt
+        from ``peft_config.json`` before its weights are loaded.
+
         Raises:
             RuntimeError: If ``trunk.pt`` holds parameters this adapter does not
-                have, or with different shapes (lists them).
+                have, or with different shapes (lists them); or if a PEFT
+                checkpoint has no ``peft_config.json`` and no PEFT is set up.
         """
         path = Path(path)
-        if self._peft is not None and (path / "peft_adapter").exists():
+        if (path / "peft_adapter").exists():
+            if self._peft is None:
+                self._peft = self._peft_from_checkpoint(path)
             self._peft.load(str(path / "peft_adapter"))
         if (path / "trunk.pt").exists():
             self._load_trunk(torch.load(path / "trunk.pt", map_location="cpu", weights_only=True))
@@ -502,6 +518,18 @@ class MolfunStructureModel:
             self.head.load_state_dict(
                 torch.load(path / "head.pt", map_location=self.device, weights_only=True)
             )
+
+    def _peft_from_checkpoint(self, path: Path) -> MolfunPEFT:
+        config_path = path / "peft_config.json"
+        if not config_path.is_file():
+            raise RuntimeError(
+                f"{path} has a PEFT adapter but no peft_config.json; set up the same "
+                "PEFT (e.g. LoRAFinetune(...).setup(model)) before load()"
+            )
+        saved = json.loads(config_path.read_text())
+        peft = MolfunPEFT(saved["method"], saved["config"], use_hf=saved["use_hf"])
+        peft.apply(self.adapter.peft_target_module)
+        return peft
 
     def _load_trunk(self, trunk: dict[str, torch.Tensor]) -> None:
         params = dict(self.adapter.named_parameters())

@@ -3,6 +3,7 @@
 # docs/superpowers/specs/2026-10-20-kinase-experts-design.md, milestone P).
 # Paths come from .env (MOLFUN_KINASE_DATA, MOLFUN_WORK_DIR).
 
+name: full                  # run directory: <work>/runs/<name>
 model: simplefold_100M
 
 train:

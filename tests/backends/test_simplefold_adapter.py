@@ -71,11 +71,25 @@ def test_trunk_blocks_are_the_residue_trunk(adapter):
     )  # trunk depth in tiny_arch.yaml (atom trunks have 1)
 
 
-def test_default_peft_targets_match_linear_layers(adapter):
-    names = [n for n, m in adapter.peft_target_module.named_modules() if isinstance(m, nn.Linear)]
+def _matched(targets, modules):
+    """Modules HF PEFT would target: name equal to a target or ending in '.<target>'."""
+    return {
+        name: module
+        for name, module in modules
+        if any(name == t or name.endswith("." + t) for t in targets)
+    }
 
-    for target in adapter.default_peft_targets:
-        assert any(n.endswith(target) for n in names), target
+
+def test_default_peft_targets_match_only_linear_layers(adapter):
+    matched = _matched(adapter.default_peft_targets, adapter.peft_target_module.named_modules())
+
+    assert matched
+    assert all(isinstance(m, nn.Linear) for m in matched.values()), [
+        n for n, m in matched.items() if not isinstance(m, nn.Linear)
+    ]
+    leaf_names = {name.rsplit(".", 1)[-1] for name in matched}
+    assert leaf_names == {"qkv", "proj", "w1", "w2"}
+    assert any(name.startswith("trunk.blocks.") for name in matched)
 
 
 def test_esm_stays_in_eval_mode_when_training(adapter):

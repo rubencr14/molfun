@@ -221,12 +221,12 @@ def pilot_report(
     return report
 
 
-def write_report(report: dict, out_dir: Path) -> None:
-    """Write ``pilot_report.json`` and a readable ``pilot_report.md``."""
+def write_report(report: dict, out_dir: Path, label: str = "tuned") -> Path:
+    """Write ``pilot_report_<label>.json`` and a readable ``.md``; returns the md path."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "pilot_report.json").write_text(json.dumps(report, indent=2))
+    (out_dir / f"pilot_report_{label}.json").write_text(json.dumps(report, indent=2))
     lines = [
-        "# Kinase pilot — SimpleFold-100M base vs kinase fine-tune",
+        f"# Kinase pilot — SimpleFold-100M base vs kinase fine-tune ({label})",
         "",
         "100M trainable trunk + frozen ESM2-3B. Held-out kinase families only; "
         "predictions from sequence alone; means per UniProt, 95% CI by bootstrap over UniProts.",
@@ -251,7 +251,9 @@ def write_report(report: dict, out_dir: Path) -> None:
         f"**Go/no-go (spec §5.8): {'GO' if report['go'] else 'NO-GO'}** — go needs Δ ≥ 0 on "
         "TM and lDDT and Δ > 0 on a state metric.",
     ]
-    (out_dir / "pilot_report.md").write_text("\n".join(lines) + "\n")
+    md = out_dir / f"pilot_report_{label}.md"
+    md.write_text("\n".join(lines) + "\n")
+    return md
 
 
 # ----------------------------------------------------------------------
@@ -259,15 +261,40 @@ def write_report(report: dict, out_dir: Path) -> None:
 # ----------------------------------------------------------------------
 
 
+def make_strategy(t: dict):
+    """Build the fine-tuning strategy a recipe's ``train`` section names
+    (``full`` or ``lora``)."""
+    from molfun.training import FullFinetune, LoRAFinetune
+
+    if t.get("strategy") not in ("full", "lora"):
+        raise ValueError(f"unknown strategy {t.get('strategy')!r} (use 'full' or 'lora')")
+    common = dict(
+        lr=t["lr"],
+        warmup_steps=t["warmup_steps"],
+        scheduler=t["scheduler"],
+        ema_decay=t["ema_decay"],
+        grad_clip=t["grad_clip"],
+        amp_dtype=t["amp_dtype"],
+    )
+    if t["strategy"] == "full":
+        return FullFinetune(layer_lr_decay=t["layer_lr_decay"], **common)
+    return LoRAFinetune(
+        rank=t["lora_rank"],
+        alpha=t["lora_alpha"],
+        dropout=t.get("lora_dropout", 0.0),
+        lr_lora=t["lr"],
+        **common,
+    )
+
+
 def train_pilot(cfg: dict) -> Path:
     """Fine-tune on the training UniProts; returns the saved checkpoint dir
-    (EMA weights applied before saving)."""
+    (``<work>/runs/<name>/final``, EMA weights applied before saving)."""
     import torch
     from torch.utils.data import DataLoader
 
     from molfun.backends.simplefold.records import SimpleFoldRecordDataset, collate_records
     from molfun.config.paths import pilot_paths
-    from molfun.training import FullFinetune
 
     paths = pilot_paths()
     t = cfg["train"]
@@ -288,16 +315,8 @@ def train_pilot(cfg: dict) -> Path:
         persistent_workers=t["num_workers"] > 0,
     )
     model = _load_model(cfg["model"], None)
-    strategy = FullFinetune(
-        lr=t["lr"],
-        layer_lr_decay=t["layer_lr_decay"],
-        warmup_steps=t["warmup_steps"],
-        scheduler=t["scheduler"],
-        ema_decay=t["ema_decay"],
-        grad_clip=t["grad_clip"],
-        amp_dtype=t["amp_dtype"],
-    )
-    run_dir = paths.work_dir / "run"
+    strategy = make_strategy(t)
+    run_dir = paths.work_dir / "runs" / cfg.get("name", t["strategy"])
     history = model.fit(loader, strategy=strategy, epochs=t["epochs"])
     strategy.apply_ema(model)
     final = run_dir / "final"
@@ -309,14 +328,16 @@ def train_pilot(cfg: dict) -> Path:
 def main(argv: list[str] | None = None) -> None:
     """CLI entry point (see module docstring)."""
     parser = argparse.ArgumentParser(description="Kinase pilot")
+    parser.add_argument("--recipe", type=Path, default=_RECIPE)
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("train")
     ev = sub.add_parser("evaluate")
     ev.add_argument("--name", required=True)
     ev.add_argument("--checkpoint", type=Path, default=None)
-    sub.add_parser("report")
+    rep = sub.add_parser("report")
+    rep.add_argument("--tuned", default="tuned", help="eval name to compare with base")
     args = parser.parse_args(argv)
-    cfg = load_pilot_config()
+    cfg = load_pilot_config(args.recipe)
 
     if args.cmd == "train":
         print(train_pilot(cfg))
@@ -328,10 +349,9 @@ def main(argv: list[str] | None = None) -> None:
 
         work = pilot_paths().work_dir
         base = pd.read_csv(work / "eval" / "base.csv", dtype={"structure_id": str})
-        tuned = pd.read_csv(work / "eval" / "tuned.csv", dtype={"structure_id": str})
+        tuned = pd.read_csv(work / "eval" / f"{args.tuned}.csv", dtype={"structure_id": str})
         report = pilot_report(base, tuned, n_boot=cfg["eval"]["bootstrap"])
-        write_report(report, work)
-        print((work / "pilot_report.md").read_text())
+        print(write_report(report, work, args.tuned).read_text())
 
 
 if __name__ == "__main__":

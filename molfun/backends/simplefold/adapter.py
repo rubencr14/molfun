@@ -235,7 +235,16 @@ class SimpleFoldAdapter(BaseAdapter):
 
     @property
     def default_peft_targets(self) -> list[str]:
-        return ["qkv", "proj", "w1", "w2"]
+        """Full names of the transformer projections (``qkv``, ``proj``, ``w1``,
+        ``w2``) that are ``nn.Linear``. Full names, because short ones also
+        match other modules (e.g. the ESM conditioning ``esm_s_proj.proj`` is a
+        Sequential, which PEFT cannot adapt)."""
+        leaves = {"qkv", "proj", "w1", "w2"}
+        return sorted(
+            name
+            for name, module in self.sf.model.named_modules()
+            if isinstance(module, nn.Linear) and name.rsplit(".", 1)[-1] in leaves
+        )
 
     def param_summary(self) -> dict[str, int]:
         trunk = sum(p.numel() for p in self.sf.model.parameters())

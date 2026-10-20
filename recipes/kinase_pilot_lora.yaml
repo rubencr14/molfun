@@ -1,0 +1,33 @@
+# Kinase pilot, second iteration: LoRA instead of a full fine-tune.
+# The full fine-tune (kinase_pilot.yaml) improved state recovery but cost a
+# little global accuracy; LoRA keeps the generalist weights frozen and only
+# learns low-rank updates on the trunk projections (qkv, proj, w1, w2).
+# Everything except the strategy matches kinase_pilot.yaml.
+
+name: lora                  # run directory: <work>/runs/<name>
+model: simplefold_100M
+
+train:
+  strategy: lora
+  lora_rank: 16
+  lora_alpha: 32
+  lora_dropout: 0.0
+  lr: 1.0e-4                # usual LoRA learning rate (full fine-tune used 2e-5)
+  warmup_steps: 200
+  scheduler: cosine
+  ema_decay: 0.999
+  grad_clip: 2.0
+  amp_dtype: bfloat16
+  epochs: 100               # one sample per training UniProt per epoch
+  max_tokens: 256
+  num_workers: 8
+  seed: 0
+
+sample:
+  num_samples: 5
+  num_steps: 500
+  tau: 0.1
+
+eval:
+  state_lddt_threshold: 0.7
+  bootstrap: 2000
